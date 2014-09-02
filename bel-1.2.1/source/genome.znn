@@ -1,0 +1,250 @@
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(*       BBBB      EEEEE     L         The                                    *)
+(*       B   B     E         L           BIOLOGICAL                           *)
+(*       BBBB      EEE       L           ENGINEERING                          *)
+(*       B    B    E         L           LABORATORY                           *)
+(*       BBBBB     EEEEEE    LLLLLL        @ Saginaw Valley State University  *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Copyright 2008-2010, Alan D. Freed                                         *)
+(*                                                                            *)
+(* This file is part of the BEL suite of .NET/mono libraries.                 *)
+(*                                                                            *)
+(* BEL is a free software: you can redistribute it and/or modify it under the *)
+(* terms of the GNU Lesser General Public License as published by the Free    *)
+(* Software Foundation, either version 3 of the License, or (at your option)  *)
+(* any later version.                                                         *)
+(*                                                                            *)
+(* BEL is distributed in the hope that it will be useful, but WITHOUT ANY     *)
+(* WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS  *)
+(* FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License for   *)
+(* more details.                                                              *)
+(*                                                                            *)
+(* You should have received a copy of the GNU Lesser General Public License   *)
+(* along with BEL.  If not, see <http://www.gnu.org/licenses/>.               *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* This file is 4 of 7 creating a genetic algorithm for parameter estimation  *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* SGA stands for Simple Genetic Algorithm.  SGA was originally written in    *)
+(* Pascal, and is nicely documented in the textbook:                          *)
+(*   Goldberg, D. E., "Genetic Algorithms in search, optimization & machine   *)
+(*                     learning," Addison-Wesley, Boston, 1989.               *)
+(* David Goldberg's original SGA code carries the following copywrite notice: *)
+(*   { A Simple Genetic Algorithm - SGA - v1.0 }                              *)
+(*   { (c)   David Edward Goldberg  1986       }                              *)
+(*   {       All Rights Reserved               }                              *)
+(* This reinterpretation of Goldberg's original SGA is written in Zonnon - a  *)
+(* direct decendent of Pascal.  It is a complete rewrite of SGA.  In this     *)
+(* rewrite, efforts have been made to keep true to the spirit of Goldberg's   *)
+(* original SGA algorithms.                                                   *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Type                                                                       *)
+(*   Genome                                                                   *)
+(*      Initialize : prepares the encoder/decoder for decoding a parameter    *)
+(*      Clone      : make a duplicate (deep) copy of the genome               *)
+(*      IsEqualTo  : determines if two genome are clones of one another       *)
+(*      Strands    : the number chromosomes that makes up the genome          *)
+(*      Mutate     : scans over internal array of chromosomes for mutations   *)
+(*      Decode     : genome genotype ==> phenotype array for model parameters *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+
+module {public} Bel.GA.Genomes;
+
+   import
+      System.Int32 as Int,
+      Bel.IO.Log as L,
+      Bel.MF.Numbers as N,
+      Bel.MF.Arrays  as A,
+      Bel.GA.Chromosomes as C,
+      Bel.Chromosome as Chromosome;
+
+
+   type {public}
+      ChromosomeType = (haploid, diploid);
+      Genotype       = array * of object{Chromosome};
+
+
+   procedure {public} Crossover (probabilityOfCrossover : N.Number;
+                                 parentA, parentB : Genome;
+                                 var numberOfCrossovers : integer;
+                                 var childA, childB : Genome);
+   var
+      cA, cB, pA, pB : object{Chromosome};
+      l : integer;
+   begin
+      if parentA.Strands() = parentB.Strands() then
+         childA := parentA.Clone();
+         childB := parentB.Clone();
+         for l := 1 to parentA.Strands() do
+            pA := parentA[l];
+            pB := parentB[l];
+            C.Crossover(probabilityOfCrossover, pA, pB,
+                        numberOfCrossovers, cA, cB);
+            childA[l] := cA;
+            childB[l] := cB
+         end
+      else
+         L.ErrorMessage(212,20, "Bel.GA.Genomes.Crossover")
+      end
+   end Crossover;
+
+
+   type {public, ref} Genome = object implements []
+
+      var
+         cromID : ChromosomeType;
+         genome : Genotype;
+
+      procedure {public} Initialize (minParameters, maxParameters : A.Array;
+                                     numberOfSignificantFigures : integer;
+                                     chromosomeType : ChromosomeType);
+      var
+         dip : C.Diploid;
+         hap : C.Haploid;
+         l, dimL : integer;
+      begin
+         dimL := maxParameters.Length();
+         if (dimL > 0) & (minParameters.Length() = dimL) then
+            genome := new Genotype(maxParameters.Length())
+         else
+            L.ErrorMessage(212,20, "Bel.GA.Genomes.Genome.Initialize")
+         end;
+         for l := 1 to dimL do
+            if minParameters[l] >= maxParameters[l] then
+               L.ErrorMessage(408,20, "Bel.GA.Genomes.Genome.Initialize")
+            end
+         end;
+         if chromosomeType = ChromosomeType.haploid then
+            cromID := ChromosomeType.haploid;
+            for l := 1 to dimL do
+               hap := new C.Haploid;
+               hap.Initialize(minParameters[l], maxParameters[l],
+                              numberOfSignificantFigures);
+               genome[l-1] := hap
+            end
+         else (* chromosomeType = ChromosomeType.diploid *)
+            cromID := ChromosomeType.diploid;
+            for l := 1 to dimL do
+               dip := new C.Diploid;
+               dip.Initialize(minParameters[l], maxParameters[l],
+                              numberOfSignificantFigures);
+               genome[l-1] := dip
+            end
+         end
+      end Initialize;
+
+      procedure {public} Clone () : Genome;
+      var
+         g : Genome;
+         i : integer;
+      begin
+         g := new Genome;
+         g.cromID := cromID;
+         g.genome := new Genotype(Strands());
+         for i := 0 to Strands()-1 do
+            g.genome[i] := genome[i].Clone()
+         end;
+         return g
+      end Clone;
+
+      procedure {public} Equals (r : Genome) : boolean;
+      var
+         i : integer;
+      begin
+         if Strands() = r.Strands() then
+            i := 0;
+            loop
+               if i = Strands() then
+                  exit
+               end;
+               if genome[i] # r.genome[i] then
+                  return false
+               end;
+               inc(i)
+            end;
+            return true
+         else
+            return false
+         end
+      end Equals;
+
+      procedure {public} Get (strand : integer) : object{Chromosome}
+         implements [].Get;
+      begin
+         dec(strand);
+         return genome[strand]
+      end Get;
+
+      procedure {public} Set (strand : integer; c : object{Chromosome})
+         implements [].Set;
+      begin
+         dec(strand);
+         genome[strand] := c.Clone()
+      end Set;
+
+      procedure {public} Strands () : integer;
+      begin
+         if genome # nil then
+            return len(genome)
+         else
+            return 0
+         end
+      end Strands;
+
+      procedure {public} Mutate (mutationProbability : N.Number;
+                                 var numberOfMutations : integer);
+      var
+         c : object{Chromosome};
+         l : integer;
+      begin
+         for l := 0 to Strands()-1 do
+            c := genome[l];
+            c.Mutate(mutationProbability, numberOfMutations);
+            genome[l] := c
+         end
+      end Mutate;
+
+      procedure {public} Decode () : A.Array;
+      var
+         c : object{Chromosome};
+         l : integer;
+         parameters : A.Array;
+      begin
+         parameters.Create(Strands());
+         for l := 1 to Strands() do
+            c := genome[l-1];
+            parameters[l] := c.Decode()
+         end;
+         return parameters
+      end Decode;
+
+      procedure {public} Encode (phenotype : A.Array);
+      var
+         c : object{Chromosome};
+         l : integer;
+      begin
+         if phenotype.Length() = Strands() then
+            for l := 1 to Strands() do
+               c := genome[l-1];
+               c.Encode(phenotype[l]);
+               genome[l-1] := c
+            end
+         else
+            L.ErrorMessage(212,20, "Bel.GA.Genomes.Genome.Encode")
+         end
+      end Encode;
+
+   begin
+   end Genome;
+
+   operator {public} "=" (l, r : Genome) : boolean;
+   begin
+      return l.Equals(r)
+   end "=";
+
+   operator {public} "#" (l, r : Genome) : boolean;
+   begin
+      return ~l.Equals(r)
+   end "#";
+
+begin
+end Genomes.

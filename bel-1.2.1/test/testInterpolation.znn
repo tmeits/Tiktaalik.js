@@ -1,0 +1,119 @@
+module {public} Main;
+
+   (* Tests the module Interpolations *)
+
+   import
+      Bel.IO.Log     as L,
+      Bel.MF.Numbers as N,
+      Bel.MF.Arrays  as A,
+      Bel.MATH.Interpolations as I;
+
+   procedure Run;
+   var
+      n, v11, v12, v21, v22, x, x1, x2, y, y1, y2, z : N.Number;
+      s : string;
+      xa, ya : A.Array;
+   begin
+      s := "";
+      xa.Create(2);
+      ya.Create(2);
+      writeln("test linear interpolation");
+      write("enter x[1] :   ");
+      readln(s);
+      n.Parse(s);
+      xa[1] := n;
+      write("enter x[2] :   ");
+      readln(s);
+      n.Parse(s);
+      xa[2] := n;
+      write("enter y[1] :   ");
+      readln(s);
+      n.Parse(s);
+      ya[1] := n;
+      write("enter y[2] :   ");
+      readln(s);
+      n.Parse(s);
+      ya[2] := n;
+      writeln("now perform the interpolation");
+      write("enter x :      ");
+      readln(s);
+      x.Parse(s);
+      y := I.Neville(xa, ya, x);
+      writeln("computed: y = " + y.Typeset());
+      writeln;
+      xa.Create(3);
+      ya.Create(3);
+      writeln("test quadratic interpolation");
+      write("enter x[1] :   ");
+      readln(s);
+      n.Parse(s);
+      xa[1] := n;
+      write("enter x[2] :   ");
+      readln(s);
+      n.Parse(s);
+      xa[2] := n;
+      write("enter x[3] :   ");
+      readln(s);
+      n.Parse(s);
+      xa[3] := n;
+      write("enter y[1] :   ");
+      readln(s);
+      n.Parse(s);
+      ya[1] := n;
+      write("enter y[2] :   ");
+      readln(s);
+      n.Parse(s);
+      ya[2] := n;
+      write("enter y[3] :   ");
+      readln(s);
+      n.Parse(s);
+      ya[3] := n;
+      writeln("now perform the interpolation");
+      write("enter x :      ");
+      readln(s);
+      x.Parse(s);
+      y := I.Neville(xa, ya, x);
+      writeln("computed: y = " + y.Typeset());
+      writeln;
+      (* bilinear interpolation *)
+      writeln();
+      writeln("test bilinear interpolation on an x-y grid");
+      write("enter x_1 :   ");
+      readln(s);
+      x1.Parse(s);
+      write("enter x_2 :   ");
+      readln(s);
+      x2.Parse(s);
+      write("enter y_1 :   ");
+      readln(s);
+      y1.Parse(s);
+      write("enter y_2 :   ");
+      readln(s);
+      y2.Parse(s);
+      write("enter value at x_1, y_1 :   ");
+      readln(s);
+      v11.Parse(s);
+      write("enter value at x_1, y_2 :   ");
+      readln(s);
+      v12.Parse(s);
+      write("enter value at x_2, y_1 :   ");
+      readln(s);
+      v21.Parse(s);
+      write("enter value at x_2, y_2 :   ");
+      readln(s);
+      v22.Parse(s);
+      writeln("now perform the interpolation");
+      write("enter x :          ");
+      readln(s);
+      x.Parse(s);
+      write("enter y :          ");
+      readln(s);
+      y.Parse(s);
+      z := I.Bilinear(x1, x2, y1, y2, v11, v12, v21, v22, x, y);
+      writeln("computed value = " + z.Typeset())
+   end Run;
+
+begin
+   Run;
+   L.Close
+end Main.

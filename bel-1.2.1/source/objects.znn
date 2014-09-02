@@ -1,0 +1,186 @@
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(*       BBBB      EEEEE     L         The                                    *)
+(*       B   B     E         L           BIOLOGICAL                           *)
+(*       BBBB      EEE       L           ENGINEERING                          *)
+(*       B    B    E         L           LABORATORY                           *)
+(*       BBBBB     EEEEEE    LLLLLL        @ Saginaw Valley State University  *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Copyright 2008-2010, Alan D. Freed                                         *)
+(*                                                                            *)
+(* This file is part of the BEL suite of .NET/mono libraries.                 *)
+(*                                                                            *)
+(* BEL is a free software: you can redistribute it and/or modify it under the *)
+(* terms of the GNU Lesser General Public License as published by the Free    *)
+(* Software Foundation, either version 3 of the License, or (at your option)  *)
+(* any later version.                                                         *)
+(*                                                                            *)
+(* BEL is distributed in the hope that it will be useful, but WITHOUT ANY     *)
+(* WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS  *)
+(* FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License for   *)
+(* more details.                                                              *)
+(*                                                                            *)
+(* You should have received a copy of the GNU Lesser General Public License   *)
+(* along with BEL.  If not, see <http://www.gnu.org/licenses/>.               *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Establishes object interfaces for types used in BEL's data structures      *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Definition  : Object      - interface for a persistent object              *)
+(*   methods   : Initialize  - abstract: create dynamic memory & zero fields  *)
+(*             : Nullify     - abstract: set all dynamic memory links to nil  *)
+(*             : Clone       - abstract: return an instance of itself         *)
+(*             : Load        - abstract: read a instance from a binary file   *)
+(*             : Store       - abstract: write itself to a binary file        *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Definition  : Field     - interface for mathematical fields as objects     *)
+(*   methods   : Negative  - abstract: unary operation, returns its negative  *)
+(*             : Add       - abstract: returns sum of the two fields          *)
+(*             : Subtract  - abstract: returns difference between two fields  *)
+(*             : Multiply  - abstract: multiplies two fields                  *)
+(*             : Divide    - abstract: divides one field by another           *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Arithmatic operators can be overloaded for instances of fields.            *)
+(* Empty objects are defined for each of these definitions to build from.     *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+
+
+definition {public, value} Bel.Object;
+   import
+      System.IO.BinaryReader as BinaryReader,
+      System.IO.BinaryWriter as BinaryWriter;
+   procedure {public} Initialize;
+   procedure {public} Nullify;
+   procedure {public} Clone () : object{Object};
+   procedure {public} Load  (br : BinaryReader);
+   procedure {public} Store (bw : BinaryWriter);
+end Object.
+
+
+definition {public, value} Bel.Field refines Bel.Object;
+   procedure {public} Negative ()                  : object{Field};
+   procedure {public} Add      (f : object{Field}) : object{Field};
+   procedure {public} Subtract (f : object{Field}) : object{Field};
+   procedure {public} Multiply (f : object{Field}) : object{Field};
+   procedure {public} Divide   (f : object{Field}) : object{Field};
+end Field.
+
+
+object {public, value} Bel.EmptyObject implements Bel.Object;
+
+   procedure {public} Initialize
+      implements Bel.Object.Initialize;
+   begin
+   end Initialize;
+
+   procedure {public} Nullify
+      implements Bel.Object.Nullify;
+   begin
+   end Nullify;
+
+   procedure {public} Clone () : object{Object}
+      implements Bel.Object.Clone;
+   var
+      e : EmptyObject;
+      o : object{Object};
+   begin
+      o := Object(e);
+      return o
+   end Clone;
+
+   procedure {public} Load  (br : BinaryReader)
+      implements Bel.Object.Load;
+   begin
+   end Load;
+
+   procedure {public} Store (bw : BinaryWriter)
+      implements Bel.Object.Store;
+   begin
+   end Store;
+
+begin
+end EmptyObject.
+
+
+object {public, value} Bel.EmptyField implements Bel.Field;
+
+   procedure {public} Initialize
+      implements Bel.Object.Initialize;
+   begin
+   end Initialize;
+
+   procedure {public} Nullify
+      implements Bel.Object.Nullify;
+   begin
+   end Nullify;
+
+   procedure {public} Clone () : object{Object}
+      implements Bel.Object.Clone;
+   var
+      e : EmptyField;
+      o : object{Object};
+   begin
+      o := Object(e);
+      return o
+   end Clone;
+
+   procedure {public} Load  (br : BinaryReader)
+      implements Bel.Object.Load;
+   begin
+   end Load;
+
+   procedure {public} Store (bw : BinaryWriter)
+      implements Bel.Object.Store;
+   begin
+   end Store;
+
+   procedure {public} Negative () : object{Field}
+      implements Bel.Field.Negative;
+   var
+      e : EmptyField;
+      g : object{Field};
+   begin
+      g := Field(e);
+      return g
+   end Negative;
+
+   procedure {public} Add (f : object{Field}) : object{Field}
+      implements Bel.Field.Add;
+   var
+      e : EmptyField;
+      g : object{Field};
+   begin
+      g := Field(e);
+      return g
+   end Add;
+
+   procedure {public} Subtract (f : object{Field}) : object{Field}
+      implements Bel.Field.Subtract;
+   var
+      e : EmptyField;
+      g : object{Field};
+   begin
+      g := Field(e);
+      return g
+   end Subtract;
+
+   procedure {public} Multiply (f : object{Field}) : object{Field}
+      implements Bel.Field.Multiply;
+   var
+      e : EmptyField;
+      g : object{Field};
+   begin
+      g := Field(e);
+      return g
+   end Multiply;
+
+   procedure {public} Divide (f : object{Field}) : object{Field}
+      implements Bel.Field.Divide;
+   var
+      e : EmptyField;
+      g : object{Field};
+   begin
+      g := Field(e);
+      return g
+   end Divide;
+
+begin
+end EmptyField.

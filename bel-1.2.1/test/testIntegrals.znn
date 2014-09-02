@@ -1,0 +1,104 @@
+module {public} Main;
+
+   (* tests the module Integrals:  y = int_a^b f(x) dx *)
+
+   import
+      Bel.IO.Log as L,
+      Bel.MF.Numbers as N,
+      Bel.MATH.Functions as M,
+      Bel.MATH.Integrals as I;
+
+   type
+      F = procedure (N.Number) : N.Number;
+
+   procedure Write (f : F; a, b, y : N.Number);
+   var
+      e, z : N.Number;
+   begin
+      writeln("analyitic:");
+      writeln("  solution = " + y.Typeset());
+      z := f(a);
+      writeln("  f(a)     = " + z.Typeset());
+      z := f(b);
+      writeln("  f(b)     = " + z.Typeset());
+      z := I.Integrate(f, a, b, I.Method.trapezoidal);
+      e := M.Abs(y - z);
+      writeln("trapezoidal rule:");
+      writeln("  solution = " + z.Typeset());
+      writeln("  error    = " + e.Typeset());
+      z := I.Integrate(f, a, b, I.Method.simpson);
+      e := M.Abs(y - z);
+      writeln("Simpson's rule:");
+      writeln("  solution = " + z.Typeset());
+      writeln("  error    = " + e.Typeset());
+      z := I.Integrate(f, a, b, I.Method.threeEights);
+      e := M.Abs(y - z);
+      writeln("Simpson's 3/8ths rule:");
+      writeln("  solution = " + z.Typeset());
+      writeln("  error    = " + e.Typeset());
+      z := I.Integrate(f, a, b, I.Method.romberg);
+      e := M.Abs(y - z);
+      writeln("Romberg extrapolation:");
+      writeln("  solution = " + z.Typeset());
+      writeln("  error    = " + e.Typeset());
+      z := I.Integrate(f, a, b, I.Method.gauss);
+      e := M.Abs(y - z);
+      writeln("Gauss-Kronrod:");
+      writeln("  solution = " + z.Typeset());
+      writeln("  error    = " + e.Typeset())
+   end Write;
+
+   procedure Cos (x : N.Number) : N.Number;
+   var
+      y : N.Number;
+   begin
+      y := M.Cos(x);
+      return y
+   end Cos;
+
+   procedure SolnCos (a, b : N.Number) : N.Number;
+   var
+      y : N.Number;
+   begin
+      y := M.Sin(b) - M.Sin(a);
+      return y
+   end SolnCos;
+
+   procedure {public} Run;
+   var
+      a, b, y : N.Number;
+   begin
+      (* first problem *)
+      writeln("Integrate the cosine function from 0 to pi/8");
+      a := 0;
+      b := M.Pi/8;
+      y := SolnCos(a, b);
+      Write(Cos, a, b, y);
+      writeln;
+      writeln("Integrate the cosine function from 0 to pi/4");
+      a := 0;
+      b := M.Pi/4;
+      y := SolnCos(a, b);
+      Write(Cos, a, b, y);
+      writeln;
+      writeln("Integrate the cosine function from 0 to 3*pi/8");
+      a := 0;
+      b := 3*M.Pi/8;
+      y := SolnCos(a, b);
+      Write(Cos, a, b, y);
+      writeln;
+      writeln("Integrate the cosine function from 0 to pi/2");
+      a := 0;
+      b := M.Pi/2;
+      y := SolnCos(a, b);
+      Write(Cos, a, b, y);
+      writeln;
+   end Run;
+
+begin
+   Run;
+   writeln();
+   writeln("Press 'Enter' to quit.");
+   readln();
+   L.Close
+end Main.

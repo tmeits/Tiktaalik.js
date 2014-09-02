@@ -1,0 +1,1783 @@
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(*       BBBB      EEEEE     L         The                                    *)
+(*       B   B     E         L           BIO                                  *)
+(*       BBBB      EEE       L           ENGINEERING                          *)
+(*       B    B    E         L           LABORATORY                           *)
+(*       BBBBB     EEEEEE    LLLLLL        @ Saginaw Valley State University  *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Copyright 2008-2010, Alan D. Freed                                         *)
+(*                                                                            *)
+(* This file is part of the BEL suite of .NET/mono libraries.                 *)
+(*                                                                            *)
+(* BEL is a free software: you can redistribute it and/or modify it under the *)
+(* terms of the GNU Lesser General Public License as published by the Free    *)
+(* Software Foundation, either version 3 of the License, or (at your option)  *)
+(* any later version.                                                         *)
+(*                                                                            *)
+(* BEL is distributed in the hope that it will be useful, but WITHOUT ANY     *)
+(* WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS  *)
+(* FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License for   *)
+(* more details.                                                              *)
+(*                                                                            *)
+(* You should have received a copy of the GNU Lesser General Public License   *)
+(* along with BEL.  If not, see <http://www.gnu.org/licenses/>.               *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Creates an NxM array of Bel.MF.Numbers.Number for use in this framework.   *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* The row & column indexers go from 1..N, not from 0..N-1 as in C & Zonnon.  *)
+(* IMPORTANT: When using index notation to assign values to a matrix, make    *)
+(*            sure that you import Bel.MF.Numbers so that any 'overloaded'    *)
+(*            assignments, like m[i,j] := 1, can take place behind the scene. *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Types       : MatrixOfCard8   - dynamic matrix of System.Byte              *)
+(*             : MatrixOfCard16  - dynamic matrix of System.UInt16            *)
+(*             : MatrixOfCard32  - dynamic matrix of System.UInt32            *)
+(*             : MatrixOfCard64  - dynamic matrix of System.UInt64            *)
+(*             : MatrixOfInt8    - dynamic matrix of System.SByte             *)
+(*             : MatrixOfInt16   - dynamic matrix of System.Int16             *)
+(*             : MatrixOfInt32   - dynamic matrix of System.Int32             *)
+(*             : MatrixOfInt64   - dynamic matrix of System.Int64             *)
+(*             : MatrixOfReal32  - dynamic matrix of System.Single            *)
+(*             : MatrixOfReal64  - dynamic matrix of System.Double            *)
+(*             : MatrixOfString  - dynamic matrix of string                   *)
+(*             : MatrixOfNumber  - dynamic matrix of Bel.Numbers.Number       *)
+(*             : MathMatrix - uses "math" arrays in Zonnon language           *)
+(* Object      : Matrix        - a two-dimensional array object               *)
+(*    methods  : Initialize;   - implements Bel.Object.Initialize             *)
+(*             : Nullify       - implements Bel.Object.Nullify                *)
+(*             : Clone         - implements Bel.Object.Clone                  *)
+(*             : Load          - implements Bel.Object.Load                   *)
+(*             : Store         - implements Bel.Object.Store                  *)
+(*             : Get           - implements [].Get                            *)
+(*             : Set           - implements [].Set                            *)
+(*             : Negative      - implements Bel.Field.Negative                *)
+(*             : Add           - implements Bel.Field.Add                     *)
+(*             : Subtract      - implements Bel.Field.Subtract                *)
+(*             : Multiply      - implements Bel.Field.Multiply                *)
+(*             : Divide        - implements Bel.Field.Divide                  *)
+(*             : Create        - creates the internal dynamic data matrix     *)
+(*             : Rows          - returns the number of rows in the matrix     *)
+(*             : Columns       - returns the number of columns in the matrix  *)
+(*             : GetRow        - retrieves the specified row from the matrix  *)
+(*             : SetRow        - assigns specified row vector to the matrix   *)
+(*             : GetColumn     - retrieves the specified column from matrix   *)
+(*             : SetColumn     - assigns specified column vector to matrix    *)
+(*             : GetDiagonal   - retrieves the diagonal vector of the matrix  *)
+(*             : SetDiagonal   - assigns specified vector to matrix diagonal  *)
+(*             : GetSubMatrix  - retrieves a submatrix of the matrix          *)
+(*             : SetSubMatrix  - assigns a submatrix to the matrix            *)
+(*             : GetMatrix     - retrieves the raw array that is the matrix   *)
+(*             : GetMathMatrix - returns raw matrix as a Zonnon {math} array  *)
+(*             : SetMatrix     - used for assigning a matrix without using := *)
+(*             : SetMathMatrix     - import & convert a matrix of Number      *)
+(*             : SetMatrixOfNumber - import & convert a matrix of Number      *)
+(*             : SetMatrixOfCard8  - import & convert matrix of cardinal{8}   *)
+(*             : SetMatrixOfCard16 - import & convert matrix of cardinal{16}  *)
+(*             : SetMatrixOfCard32 - import & convert matrix of cardinal{32}  *)
+(*             : SetMatrixOfCard64 - import & convert matrix of cardinal{64}  *)
+(*             : SetMatrixOfInt8   - import & convert matrix of integer{8}    *)
+(*             : SetMatrixOfInt16  - import & convert matrix of integer{16}   *)
+(*             : SetMatrixOfInt32  - import & convert matrix of integer{32}   *)
+(*             : SetMatrixOfInt64  - import & convert matrix of integer{64}   *)
+(*             : SetMatrixOfReal32 - import & convert matrix of real{32}      *)
+(*             : SetMatrixOfReal64 - import & convert matrix of real{64}      *)
+(*             : SetMatrixOfString - import & convert matrix of string arrays *)
+(*             : Equals        - checks two matrices for equality             *)
+(*             : IsAnArray     - checks to see if one dimension is 1          *)
+(*             : IsARowVector  - checks to see if matrix is a row vector      *)
+(*             : IsAColumnVector - checks to see if matrix is a column vector *)
+(*             : IsANumber     - checks to see if matrix has only 1 cell      *)
+(*             : Dot                - returns M_{rc} = L_{rk} R_{kc}          *)
+(*             : DotTranspose       - returns M_{rc} = L_{rk} R_{ck}          *)
+(*             : TransposeDot       - returns M_{rc} = L_{kr} R_{kc}          *)
+(*             : Contract           - returns V_r = L_{rk} R_k                *)
+(*             : TransposeContract  - returns V_r = L_{kr} R_k                *)
+(*             : DoubleDot          - returns X = L_{ij} R_{ji}               *)
+(*             : TransposeDoubleDot - returns X = L_{ij} R_{ij}               *)
+(*             : Normalize     - scales matrix so that -1 <= M_{i,j} <=1      *)
+(*             : SwapRows      - exchanges two row vectors in a matrix        *)
+(*             : SwapColumns   - exchanges two column vectors in a matrix     *)
+(* Operators   : :=            - assignment                                   *)
+(*             : -             - uniary  operator                             *)
+(*             : = | #         - logical operators                            *)
+(*             : + | - | * | / - binary  operators                            *)
+(* Functions   : OneNorm       - returns the matrix 1-norm                    *)
+(*             : FrobeniusNorm - returns the matrix Frobenius-norm            *)
+(*             : InfinityNorm  - returns the matrix infinity-norm             *)
+(*             : VectorProduct - returns VL_r VR_c                            *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+
+module {public} Bel.MF.Matrices;
+
+   import
+      System.IO.BinaryReader as BinaryReader,
+      System.IO.BinaryWriter as BinaryWriter,
+      System.Byte   as Card8,   (* core type of  cardinal{8}  *)
+      System.UInt16 as Card16,  (* core type of  cardinal{16} *)
+      System.UInt32 as Card32,  (* core type of  cardinal{32} *)
+      System.UInt64 as Card64,  (* core type of  cardinal{64} *)
+      System.Int16  as Int16,   (* core type of  integer{16}  *)
+      System.Int32  as Int32,   (* core type of  integer{32}  *)
+      System.Int64  as Int64,   (* core type of  integer{64}  *)
+      System.SByte  as Int8,    (* core type of  integer{8}   *)
+      System.Single as Real32,  (* core type of  real{32}     *)
+      System.Double as Real64,  (* core type of  real{64}     *)
+      Bel.IO.Log as L,
+      Bel.MF.Numbers as N,
+      Bel.MF.Arrays  as A,
+      Bel.MATH.Functions as M,
+      Bel.Object as Object,
+      Bel.Field  as Field;
+
+   var {private}
+      zero : N.Number;
+
+   type {public}
+      MatrixOfCard8  = array *, * of Card8;
+      MatrixOfCard16 = array *, * of Card16;
+      MatrixOfCard32 = array *, * of Card32;
+      MatrixOfCard64 = array *, * of Card64;
+      MatrixOfInt8   = array *, * of Int8;
+      MatrixOfInt16  = array *, * of Int16;
+      MatrixOfInt32  = array *, * of Int32;
+      MatrixOfInt64  = array *, * of Int64;
+      MatrixOfReal32 = array *, * of Real32;
+      MatrixOfReal64 = array *, * of Real64;
+      MatrixOfString = array *, * of string;
+      MatrixOfNumber = array *, * of N.Number;
+      MathMatrix = array {math} *, * of N.Number;
+
+   type {public, value} Matrix = object implements [], Field
+
+      var {private}
+         m : MathMatrix;
+
+      procedure {public} Initialize
+         implements Object.Initialize;
+      var
+         cols, i, j, rows : integer;
+      begin
+         rows := Rows();
+         cols := Columns();
+         if (rows > 1) & (cols > 1) then
+            for i := 0 to rows-1 do
+               for j := 0 to cols-1 do
+                  m[i,j] := zero
+               end
+            end
+         elsif (rows = 1) & (cols > 1) then
+            for j := 0 to cols-1 do
+               m[0,j] := zero
+            end
+         elsif (rows > 1) & (cols = 1) then
+            for i := 0 to rows-1 do
+               m[i,0] := zero
+            end
+         elsif (rows = 1) & (cols = 1) then
+            m[0,0] := zero
+         else
+            m := nil
+         end
+      end Initialize;
+
+      procedure {public} Nullify
+         implements Object.Nullify;
+      begin
+         m := nil
+      end Nullify;
+
+      procedure {public} Clone () : object{Object}
+         implements Object.Clone;
+      var
+         mtx : Matrix;
+         o : object{Object};
+      begin
+         o := Object(mtx);
+         return o
+      end Clone;
+
+      procedure {public} Load (br : BinaryReader)
+         implements Object.Load;
+      var
+         i, j, k, l : integer;
+         n : N.Number;
+      begin
+         k := br.ReadInt32();
+         l := br.ReadInt32();
+         if (k = 0) or (l = 0) then
+            Nullify
+         else
+            if (Rows() # k) or (Columns() # l) then
+               m := new MathMatrix(k, l)
+            end;
+            for i := 0 to k-1 do
+               for j := 0 to l-1 do
+                  n.Load(br);
+                  m[i,j] := n
+               end
+            end
+         end
+      end Load;
+
+      procedure {public} Store (bw : BinaryWriter)
+         implements Object.Store;
+      var
+         i, j : integer;
+         k, l : Int32;
+         n : N.Number;
+      begin
+         k := Rows();
+         l := Columns();
+         bw.Write(k);
+         bw.Write(l);
+         bw.Flush;
+         for i := 0 to k-1 do
+            for j := 0 to l-1 do
+               n := m[i,j];
+               n.Store(bw);
+            end
+         end;
+         bw.Flush
+      end Store;
+
+      procedure {public} Get (row, col : integer) : N.Number
+         implements [].Get;
+      var
+         n : N.Number;
+      begin
+         if ((row >= 1) & (row <= Rows())) &
+               ((col >= 1) & (col <= Columns())) then
+            dec(row);
+            dec(col);
+            n := m[row,col]
+         else
+            L.ErrorMessage(310,-1, "Bel.MF.Matrices.Matrix.Get")
+         end;
+         return n
+      end Get;
+
+      procedure {public} Set (row, col : integer; x : N.Number)
+         implements [].Set;
+      begin
+         if ((row >= 1) & (row <= Rows())) &
+               ((col >= 1) & (col <= Columns())) then
+            dec(row);
+            dec(col);
+            m[row,col] := x
+         else
+            L.ErrorMessage(310,-1, "Bel.MF.Matrices.Matrix.Set")
+         end
+      end Set;
+
+      procedure {public} Negative () : object{Field}
+         implements Field.Negative;
+      var
+         g : object{Field};
+         mtx : Matrix;
+      begin
+         if Rows() > 0 then
+            mtx.m := -m;
+         end;
+         g := Field(mtx);
+         return g
+      end Negative;
+
+      procedure {public} Add (f : object{Field}) : object{Field}
+         implements Field.Add;
+      var
+         g : object{Field};
+         k, l : integer;
+         mtx, r : Matrix;
+      begin
+         if f is Matrix then
+            k := Rows();
+            l := Columns();
+            r := Matrix(f);
+            if (k > 0) & (r.Rows() = k) & (r.Columns() = l) then
+               mtx.m := m + r.m
+            else
+               L.ErrorMessage(310,-1, "Bel.MF.Matrices.Matrix.Add")
+            end
+         else
+            L.ErrorMessage(501,-1, "Bel.MF.Matrices.Matrix.Add")
+         end;
+         g := Field(mtx);
+         return g
+      end Add;
+
+      procedure {public} Subtract (f : object{Field}) : object{Field}
+         implements Field.Subtract;
+      var
+         g : object{Field};
+         k, l : integer;
+         mtx, r : Matrix;
+      begin
+         if f is Matrix then
+            k := Rows();
+            l := Columns();
+            r := Matrix(f);
+            if (k > 0) & (r.Rows() = k) & (r.Columns() = l) then
+               mtx.m := m - r.m
+            else
+               L.ErrorMessage(310,-1, "Bel.MF.Matrices.Matrix.Subtract")
+            end
+         else
+            L.ErrorMessage(501,-1, "Bel.MF.Matrices.Matrix.Subtract")
+         end;
+         g := Field(mtx);
+         return g
+      end Subtract;
+
+      procedure {public} Multiply (f : object{Field}) : object{Field}
+         implements Field.Multiply;
+      var
+         g : object{Field};
+         mtx : Matrix;
+         r : N.Number;
+      begin
+         if f is N.Number then
+            r := N.Number(f);
+            if Rows() > 0 then
+               mtx.m := r*m
+            end
+         else
+            L.ErrorMessage(501,-1, "Bel.MF.Matrices.Matrix.Multiply")
+         end;
+         g := Field(mtx);
+         return g
+      end Multiply;
+
+      procedure {public} Divide (f : object{Field}) : object{Field}
+         implements Field.Divide;
+      var
+         g : object{Field};
+         mtx : Matrix;
+         r : N.Number;
+      begin
+         if f is N.Number then
+            r := N.Number(f);
+            if Rows() > 0 then
+               mtx.m := m/r
+            end
+         else
+            L.ErrorMessage(501,-1, "Bel.MF.Matrices.Matrix.Multiply")
+         end;
+         g := Field(mtx);
+         return g
+      end Divide;
+
+      procedure {public} Create (nbrRows, nbrCols : integer);
+      begin
+         if (nbrRows # Rows()) or (nbrCols # Columns()) then
+            if (nbrRows > 0) & (nbrCols > 0) then
+               m := new MathMatrix(nbrRows, nbrCols);
+               Initialize
+            else
+               m := nil
+            end
+         end
+      end Create;
+
+      procedure {public} Rows () : integer;
+      begin
+         if m # nil then
+            return len(m, 0)
+         else
+            return 0
+         end
+      end Rows;
+
+      procedure {public} Columns () : integer;
+      begin
+         if m # nil then
+            return len(m, 1)
+         else
+            return 0
+         end
+      end Columns;
+
+      procedure {public} GetRow (row : integer) : A.Array;
+      var
+         a : A.MathArray;
+         v : A.Array;
+      begin
+         a := nil;
+         if (Columns() > 0) & (row >= 1) & (row <= Rows()) then
+            dec(row);
+            a := m[row, ..];
+            v.SetMathArray(a)
+         else
+            L.ErrorMessage(310,-1, "Bel.MF.Matrices.Matrix.GetRow")
+         end;
+         return v
+      end GetRow;
+
+      procedure {public} SetRow (row : integer; v : A.Array);
+      var
+         a : A.MathArray;
+      begin
+         a := nil;
+         if ((row >= 1) & (row <= Rows())) & (v.Length() = Columns()) then
+            dec(row);
+            a := v.GetMathArray();
+            m[row, ..] := a
+         else
+            L.ErrorMessage(310,-1, "Bel.MF.Matrices.Matrix.SetRow")
+         end
+      end SetRow;
+
+      procedure {public} GetColumn (col : integer) : A.Array;
+      var
+         a : A.MathArray;
+         v : A.Array;
+      begin
+         a := nil;
+         if (Rows() > 0) & (col >= 1) & (col <= Columns()) then
+            dec(col);
+            a := m[.., col];
+            v.SetMathArray(a)
+         else
+            L.ErrorMessage(310,-1, "Bel.MF.Matrices.Matrix.GetColumn")
+         end;
+         return v
+      end GetColumn;
+
+      procedure {public} SetColumn (col : integer; v : A.Array);
+      var
+         a : A.MathArray;
+      begin
+         a := nil;
+         if ((col >= 1) & (col <= Columns())) & (v.Length() = Rows()) then
+            dec(col);
+            a := v.GetMathArray();
+            m[.., col] := a
+         else
+            L.ErrorMessage(310,-1, "Bel.MF.Matrices.Matrix.SetColumn")
+         end
+      end SetColumn;
+
+      procedure {public} GetDiagonal () : A.Array;
+      var
+         a : A.MathArray;
+         i, j, k, l : integer;
+         v : A.Array;
+      begin
+         a := nil;
+         k := Rows();
+         l := Columns();
+         if k > 0 then
+            if k < l then
+               j := k
+            else
+               j := l
+            end;
+            a := new A.MathArray(j);
+            for i := 0 to j-1 do
+               a[i] := m[i,i]
+            end;
+            v.SetMathArray(a)
+         else
+            v.Initialize
+         end;
+         return v
+      end GetDiagonal;
+
+      procedure {public} SetDiagonal (v : A.Array);
+      var
+         i, j, k, l : integer;
+      begin
+         k := Rows();
+         l := Columns();
+         if k < l then
+            j := k
+         else
+            j := l
+         end;
+         if v.Length() = j then
+            for i := 0 to j-1 do
+               m[i,i] := v[i+1]
+            end
+         else
+            L.ErrorMessage(310,-1, "Bel.MF.Matrices.Matrix.SetDiagonal")
+         end
+      end SetDiagonal;
+
+      procedure {public} GetSubMatrix
+         (startRow, endRow, startCol, endCol : integer) : Matrix;
+      var
+         mtx : Matrix;
+      begin
+         if ((startRow <= endRow) & (startCol <= endCol)) &
+               ((startRow >= 1) & (endRow <= Rows())) &
+               ((startCol >= 1) & (endCol <= Columns())) then
+            mtx.m := m[startRow - 1 .. endRow - 1, startCol - 1 .. endCol - 1]
+         else
+            L.ErrorMessage(310,-1, "Bel.MF.Matrices.Matrix.GetSubMtx")
+         end;
+         return mtx
+      end GetSubMatrix;
+
+      procedure {public} SetSubMatrix (atRow, atCol : integer; a : Matrix);
+      begin
+         if ((atRow >= 1) & (atRow + a.Rows() <= Rows())) &
+               ((atCol >= 1) & (atCol + a.Columns() <= Columns())) then
+            m[atRow - 1 .. atRow + a.Rows() - 2,
+              atCol - 1 .. atCol + a.Columns() - 2] := a.m
+         else
+            L.ErrorMessage(310,-1, "Bel.MF.Matrices.Matrix.SetSubMtx")
+         end
+      end SetSubMatrix;
+
+      procedure {public} GetMatrix () : MatrixOfNumber;
+      var
+         i, j, k, l : integer;
+         mtx : MatrixOfNumber;
+      begin
+         mtx := nil;
+         k := Rows();
+         l := Columns();
+         if k > 0 then
+            mtx := new MatrixOfNumber(k,l);
+            for i := 0 to k-1 do
+               for j := 0 to l-1 do
+                  mtx[i,j] := m[i,j]
+               end
+            end
+         end;
+         return mtx
+      end GetMatrix;
+
+      procedure {public} GetMathMatrix () : MathMatrix;
+      var
+         mtx : MathMatrix;
+      begin
+         mtx := nil;
+         if (Rows() > 0) & (Columns() > 0) then
+            mtx := m
+         end;
+         return mtx
+      end GetMathMatrix;
+
+      (*      Set matrix functions      *)
+
+      procedure {public} SetMatrix (a : Matrix);
+      begin
+         if a.m # nil then
+            m := a.m
+         else
+            Nullify
+         end
+      end SetMatrix;
+
+      procedure {public} SetMathMatrix (mtx : MathMatrix);
+      begin
+         m := mtx
+      end SetMathMatrix;
+
+      procedure {public} SetMatrixOfNumber (mtx : MatrixOfNumber);
+      begin
+         m := mtx
+      end SetMatrixOfNumber;
+
+      procedure {public} SetMatrixOfCard8 (mtx : MatrixOfCard8);
+      begin
+         m := mtx
+      end SetMatrixOfCard8;
+
+      procedure {public} SetMatrixOfCard16 (mtx : MatrixOfCard16);
+      begin
+         m := mtx
+      end SetMatrixOfCard16;
+
+      procedure {public} SetMatrixOfCard32 (mtx : MatrixOfCard32);
+      begin
+         m := mtx
+      end SetMatrixOfCard32;
+
+      procedure {public} SetMatrixOfCard64 (mtx : MatrixOfCard64);
+      begin
+         m := mtx
+      end SetMatrixOfCard64;
+
+      procedure {public} SetMatrixOfInt8 (mtx : MatrixOfInt8);
+      begin
+         m := mtx
+      end SetMatrixOfInt8;
+
+      procedure {public} SetMatrixOfInt16 (mtx : MatrixOfInt16);
+      begin
+         m := mtx
+      end SetMatrixOfInt16;
+
+      procedure {public} SetMatrixOfInt32 (mtx : MatrixOfInt32);
+      begin
+         m := mtx
+      end SetMatrixOfInt32;
+
+      procedure {public} SetMatrixOfInt64 (mtx : MatrixOfInt64);
+      begin
+         m := mtx
+      end SetMatrixOfInt64;
+
+      procedure {public} SetMatrixOfReal32 (mtx : MatrixOfReal32);
+      begin
+         m := mtx
+      end SetMatrixOfReal32;
+
+      procedure {public} SetMatrixOfReal64 (mtx : MatrixOfReal64);
+      begin
+         m := mtx
+      end SetMatrixOfReal64;
+
+      procedure {public} SetMatrixOfString (mtx : MatrixOfString);
+      var
+         i, j, k, l : integer;
+         n : N.Number;
+         s : string;
+      begin
+         if mtx # nil then
+            k := len(mtx, 0);
+            l := len(mtx, 1);
+            m := new MathMatrix(k, l);
+            for i := 0 to k-1 do
+               for j := 0 to l-1 do
+                  s := mtx[i, j];
+                  n.Parse(s);
+                  m[i, j] := n
+               end
+            end
+         else
+            Nullify
+         end
+      end SetMatrixOfString;
+
+      (*******************************************)
+
+      procedure {public} Equals (r : Matrix) : boolean;
+      var
+         k, l : integer;
+      begin
+         k := Rows();
+         l := Columns();
+         if (r.Rows() = k) & (r.Columns() = l) then
+            if k = 0 then
+               return true
+            end;
+            return m = r.m
+         else
+            return false
+         end
+      end Equals;
+
+      procedure {public} IsAnArray () : boolean;
+      begin
+         return ((Rows() = 1) or (Columns() = 1))
+      end IsAnArray;
+
+      procedure {public} IsARowVector () : boolean;
+      begin
+         return (Columns() = 1)
+      end IsARowVector;
+
+      procedure {public} IsAColumnVector () : boolean;
+      begin
+         return (Rows() = 1)
+      end IsAColumnVector;
+
+      procedure {public} IsANumber () : boolean;
+      begin
+         return ((Rows() = 1) & (Columns() = 1))
+      end IsANumber;
+
+      (* multiplication by index contraction *)
+
+      (* L.Dot(R) returns  M_{i,j} := L_{i,k} R_{k,j} *)
+      procedure {public} Dot (r : Matrix) : Matrix;
+      var
+         mtx : Matrix;
+      begin
+         if (Columns() = r.Rows()) & (Rows() > 0) then
+            mtx.m := m * r.m;
+         else
+            L.ErrorMessage(311,-1, "Bel.MF.Matrices.Matrix.Dot")
+         end;
+         return mtx
+      end Dot;
+
+      (* L.DotTranspose(R) returns  M_{i,j} := L_{i,k} R_{j,k} *)
+      procedure {public} DotTranspose (r : Matrix) : Matrix;
+      var
+          mtx : Matrix;
+      begin
+         if (Columns() = r.Columns()) & (Rows() > 0) then
+            mtx.m := m * !r.m
+         else
+            L.ErrorMessage(311,-1, "Bel.MF.Matrices.Matrix.DotTranspose")
+         end;
+         return mtx
+      end DotTranspose;
+
+      (* L.TransposeDot(R) returns  M_{i,j} := L_{k,i} R_{k,j} *)
+      procedure {public} TransposeDot (r : Matrix) : Matrix;
+      var
+         mtx : Matrix;
+      begin
+         if (Rows() = r.Rows()) & (Columns() > 0) then
+            mtx.m := !m * r.m
+         else
+            L.ErrorMessage(311,-1, "Bel.MF.Matrices.Matrix.TransposeDot")
+         end;
+         return mtx
+      end TransposeDot;
+
+      (* L.Contract(R) returns  V_i := L_{i,k} R_k *)
+      procedure {public} Contract (r : A.Array) : A.Array;
+      var
+         v : A.Array;
+      begin
+         if (Columns() = r.Length()) & (Rows() > 0) then
+            v.SetMathArray(m * r.GetMathArray())
+         else
+            L.ErrorMessage(311,-1, "Bel.MF.Matrices.Matrix.Contract")
+         end;
+         return v
+      end Contract;
+
+      (* L.TransposeContract(R) returns  A_i := L_{k,i} R_k *)
+      procedure {public} TransposeContract (r : A.Array) : A.Array;
+      var
+         v : A.Array;
+      begin
+         if (Rows() = r.Length()) & (Columns() > 0) then
+            v.SetMathArray(!m * r.GetMathArray())
+         else
+            L.ErrorMessage(311,-1, "Bel.MF.Matrices.Matrix.TransposeContract")
+         end;
+         return v
+      end TransposeContract;
+
+      (* L.DoubleDot(R) returns  X := L_{ij} R_{ji} *)
+      procedure {public} DoubleDot (r : Matrix) : N.Number;
+      var
+         sum : N.Number;
+      begin
+         if (r.Rows = Columns()) & (r.Columns() = Rows()) then
+            sum := !m +* r.m;
+         else
+            L.ErrorMessage(311,-1, "Bel.MF.Matrices.Matrix.DoubleDot")
+         end;
+         return sum
+      end DoubleDot;
+
+      (* L.TransposeDoubleDot(R) returns  X := L_{ij} R_{ij} *)
+      procedure {public} TransposeDoubleDot (r : Matrix) : N.Number;
+      var
+         sum : N.Number;
+      begin
+         if (r.Rows = Rows()) & (r.Columns() = Columns()) then
+            sum := m +* r.m;
+         else
+            L.ErrorMessage(311,-1, "Bel.MF.Matrices.Matrix.TransposeDoubleDot")
+         end;
+         return sum
+      end TransposeDoubleDot;
+
+      (* determines scaleFactor so that all elements belong to [-1.0, 1.0] *)
+      (* and sets all elements to 0.0 that lie within (-epsilon, epsilon)  *)
+      procedure {public} Normalize (var scaleFactor : N.Number);
+      var
+         i, j, k, l : integer;
+      begin
+         (* find the element whose absolute value is the maximum *)
+         k := Rows();
+         l := Columns();
+         scaleFactor := 0;
+         for i := 0 to k-1 do
+            for j := 0 to l-1 do
+               scaleFactor := M.Max(scaleFactor, M.Abs(m[i,j]))
+            end
+         end;
+         (* divide all elements by this maximum absolute value *)
+         if scaleFactor > zero then
+            for i := 0 to k-1 do
+               for j := 0 to l-1 do
+                  m[i,j] := m[i,j]/scaleFactor;
+                  (* filter out all cells whose entries are near zero *)
+                  if M.Abs(m[i,j]) < N.Epsilon then
+                     m[i,j] := zero
+                  end
+               end
+            end
+         end
+      end Normalize;
+
+      procedure {public} SwapRows (row1, row2 : integer);
+      var
+         i, j : integer;
+         temp : N.Number;
+      begin
+         i := Rows();
+         if ((row1 >= 1) & (row1 <= i)) & ((row2 >= 1) & (row2 <= i)) then
+            dec(row1);
+            dec(row2);
+            for j := 0 to Columns()-1 do
+               temp := m[row1, j];
+               m[row1, j] := m[row2, j];
+               m[row2, j] := temp
+            end
+         else
+            L.ErrorMessage(310,-1, "Bel.MF.Matrices.Matrix.SwapRows")
+         end
+      end SwapRows;
+
+      procedure {public} SwapColumns (col1, col2 : integer);
+      var
+         i, j : integer;
+         temp : N.Number;
+      begin
+         j := Columns();
+         if ((col1 >= 1) & (col1 <= j)) & ((col2 >= 1) & (col2 <= j)) then
+            dec(col1);
+            dec(col2);
+            for i := 0 to Rows()-1 do
+               temp := m[i, col1];
+               m[i, col1] := m[i, col2];
+               m[i, col2] := temp
+            end
+         else
+            L.ErrorMessage(310,-1, "Bel.MF.Matrices.Matrix.SwapColumns")
+         end
+      end SwapColumns;
+
+   begin
+      Nullify
+   end Matrix;
+
+   (* type conversion procedures to the base, internal, data type *)
+
+   procedure {private} MatrixOfNumberToMatrix (r : MatrixOfNumber) : Matrix;
+   var
+      x : Matrix;
+   begin
+      x.SetMatrixOfNumber(r);
+      return x
+   end MatrixOfNumberToMatrix;
+
+   procedure {private} MatrixOfCard8ToMatrix (r : MatrixOfCard8) : Matrix;
+   var
+      x : Matrix;
+   begin
+      x.SetMatrixOfCard8(r);
+      return x
+   end MatrixOfCard8ToMatrix;
+
+   procedure {private} MatrixOfCard16ToMatrix (r : MatrixOfCard16) : Matrix;
+   var
+      x : Matrix;
+   begin
+      x.SetMatrixOfCard16(r);
+      return x
+   end MatrixOfCard16ToMatrix;
+
+   procedure {private} MatrixOfCard32ToMatrix (r : MatrixOfCard32) : Matrix;
+   var
+      x : Matrix;
+   begin
+      x.SetMatrixOfCard32(r);
+      return x
+   end MatrixOfCard32ToMatrix;
+
+   procedure {private} MatrixOfCard64ToMatrix (r : MatrixOfCard64) : Matrix;
+   var
+      x : Matrix;
+   begin
+      x.SetMatrixOfCard64(r);
+      return x
+   end MatrixOfCard64ToMatrix;
+
+   procedure {private} MatrixOfInt8ToMatrix (r : MatrixOfInt8) : Matrix;
+   var
+      x : Matrix;
+   begin
+      x.SetMatrixOfInt8(r);
+      return x
+   end MatrixOfInt8ToMatrix;
+
+   procedure {private} MatrixOfInt16ToMatrix (r : MatrixOfInt16) : Matrix;
+   var
+      x : Matrix;
+   begin
+      x.SetMatrixOfInt16(r);
+      return x
+   end MatrixOfInt16ToMatrix;
+
+   procedure {private} MatrixOfInt32ToMatrix (r : MatrixOfInt32) : Matrix;
+   var
+      x : Matrix;
+   begin
+      x.SetMatrixOfInt32(r);
+      return x
+   end MatrixOfInt32ToMatrix;
+
+   procedure {private} MatrixOfInt64ToMatrix (r : MatrixOfInt64) : Matrix;
+   var
+      x : Matrix;
+   begin
+      x.SetMatrixOfInt64(r);
+      return x
+   end MatrixOfInt64ToMatrix;
+
+   procedure {private} MatrixOfReal32ToMatrix (r : MatrixOfReal32) : Matrix;
+   var
+      x : Matrix;
+   begin
+      x.SetMatrixOfReal32(r);
+      return x
+   end MatrixOfReal32ToMatrix;
+
+   procedure {private} MatrixOfReal64ToMatrix (r : MatrixOfReal64) : Matrix;
+   var
+      x : Matrix;
+   begin
+      x.SetMatrixOfReal64(r);
+      return x
+   end MatrixOfReal64ToMatrix;
+
+   procedure {private} MatrixOfStringToMatrix (r : MatrixOfString) : Matrix;
+   var
+      x : Matrix;
+   begin
+      x.SetMatrixOfString(r);
+      return x
+   end MatrixOfStringToMatrix;
+
+   (* OVERLOADED OPERATORS *)
+   (* places wrappers around those methods that create new Matrix's *)
+   (* assignment operators produce deep copies *)
+
+   operator {public} ':=' (var l : Matrix; r : Matrix);
+   begin
+      l.SetMatrix(r)
+   end ':=';
+
+   operator {public} ':=' (var l : Matrix; r : MatrixOfCard8);
+   begin
+      l.SetMatrixOfCard8(r)
+   end ':=';
+
+   operator {public} ':=' (var l : Matrix; r : MatrixOfCard16);
+   begin
+      l.SetMatrixOfCard16(r)
+   end ':=';
+
+   operator {public} ':=' (var l : Matrix; r : MatrixOfCard32);
+   begin
+      l.SetMatrixOfCard32(r)
+   end ':=';
+
+   operator {public} ':=' (var l : Matrix; r : MatrixOfCard64);
+   begin
+      l.SetMatrixOfCard64(r)
+   end ':=';
+
+   operator {public} ':=' (var l : Matrix; r : MatrixOfInt8);
+   begin
+      l.SetMatrixOfInt8(r)
+   end ':=';
+
+   operator {public} ':=' (var l : Matrix; r : MatrixOfInt16);
+   begin
+      l.SetMatrixOfInt16(r)
+   end ':=';
+
+   operator {public} ':=' (var l : Matrix; r : MatrixOfInt32);
+   begin
+      l.SetMatrixOfInt32(r)
+   end ':=';
+
+   operator {public} ':=' (var l : Matrix; r : MatrixOfInt64);
+   begin
+      l.SetMatrixOfInt64(r)
+   end ':=';
+
+   operator {public} ':=' (var l : Matrix; r : MatrixOfReal32);
+   begin
+      l.SetMatrixOfReal32(r)
+   end ':=';
+
+   operator {public} ':=' (var l : Matrix; r : MatrixOfReal64);
+   begin
+      l.SetMatrixOfReal64(r)
+   end ':=';
+
+   operator {public} ':=' (var l : Matrix; r : MatrixOfString);
+   begin
+      l.SetMatrixOfString(r)
+   end ':=';
+
+   operator {public} ':=' (var l : Matrix; r : MatrixOfNumber);
+   begin
+      l.SetMatrixOfNumber(r)
+   end ':=';
+
+   (* unary operator *)
+
+   operator {public} '-' (a : Matrix) : Matrix;
+   begin
+      return Matrix(a.Negative())
+   end '-';
+
+   (* logic operators *)
+
+   operator {public} '=' (l, r : Matrix) : boolean;
+   begin
+      return l.Equals(r)
+   end '=';
+
+   operator {public} '=' (l : Matrix; r : MatrixOfCard8) : boolean;
+   begin
+      return l.Equals(MatrixOfCard8ToMatrix(r))
+   end '=';
+
+   operator {public} '=' (l : Matrix; r : MatrixOfCard16) : boolean;
+   begin
+      return l.Equals(MatrixOfCard16ToMatrix(r))
+   end '=';
+
+   operator {public} '=' (l : Matrix; r : MatrixOfCard32) : boolean;
+   begin
+      return l.Equals(MatrixOfCard32ToMatrix(r))
+   end '=';
+
+   operator {public} '=' (l : Matrix; r : MatrixOfCard64) : boolean;
+   begin
+      return l.Equals(MatrixOfCard64ToMatrix(r))
+   end '=';
+
+   operator {public} '=' (l : Matrix; r : MatrixOfInt8) : boolean;
+   begin
+      return l.Equals(MatrixOfInt8ToMatrix(r))
+   end '=';
+
+   operator {public} '=' (l : Matrix; r : MatrixOfInt16) : boolean;
+   begin
+      return l.Equals(MatrixOfInt16ToMatrix(r))
+   end '=';
+
+   operator {public} '=' (l : Matrix; r : MatrixOfInt32) : boolean;
+   begin
+      return l.Equals(MatrixOfInt32ToMatrix(r))
+   end '=';
+
+   operator {public} '=' (l : Matrix; r : MatrixOfInt64) : boolean;
+   begin
+      return l.Equals(MatrixOfInt64ToMatrix(r))
+   end '=';
+
+   operator {public} '=' (l : Matrix; r : MatrixOfReal32) : boolean;
+   begin
+      return l.Equals(MatrixOfReal32ToMatrix(r))
+   end '=';
+
+   operator {public} '=' (l : Matrix; r : MatrixOfReal64) : boolean;
+   begin
+      return l.Equals(MatrixOfReal64ToMatrix(r))
+   end '=';
+
+   operator {public} '=' (l : Matrix; r : MatrixOfString) : boolean;
+   begin
+      return l.Equals(MatrixOfStringToMatrix(r))
+   end '=';
+
+   operator {public} '=' (l : Matrix; r : MatrixOfNumber) : boolean;
+   begin
+      return l.Equals(MatrixOfNumberToMatrix(r))
+   end '=';
+
+   operator {public} '=' (l : MatrixOfCard8; r : Matrix) : boolean;
+   begin
+      return MatrixOfCard8ToMatrix(l).Equals(r)
+   end '=';
+
+   operator {public} '=' (l : MatrixOfCard16; r : Matrix) : boolean;
+   begin
+      return MatrixOfCard16ToMatrix(l).Equals(r)
+   end '=';
+
+   operator {public} '=' (l : MatrixOfCard32; r : Matrix) : boolean;
+   begin
+      return MatrixOfCard32ToMatrix(l).Equals(r)
+   end '=';
+
+   operator {public} '=' (l : MatrixOfCard64; r : Matrix) : boolean;
+   begin
+      return MatrixOfCard64ToMatrix(l).Equals(r)
+   end '=';
+
+   operator {public} '=' (l : MatrixOfInt8; r : Matrix) : boolean;
+   begin
+      return MatrixOfInt8ToMatrix(l).Equals(r)
+   end '=';
+
+   operator {public} '=' (l : MatrixOfInt16; r : Matrix) : boolean;
+   begin
+      return MatrixOfInt16ToMatrix(l).Equals(r)
+   end '=';
+
+   operator {public} '=' (l : MatrixOfInt32; r : Matrix) : boolean;
+   begin
+      return MatrixOfInt32ToMatrix(l).Equals(r)
+   end '=';
+
+   operator {public} '=' (l : MatrixOfInt64; r : Matrix) : boolean;
+   begin
+      return MatrixOfInt64ToMatrix(l).Equals(r)
+   end '=';
+
+   operator {public} '=' (l : MatrixOfReal32; r : Matrix) : boolean;
+   begin
+      return MatrixOfReal32ToMatrix(l).Equals(r)
+   end '=';
+
+   operator {public} '=' (l : MatrixOfReal64; r : Matrix) : boolean;
+   begin
+      return MatrixOfReal64ToMatrix(l).Equals(r)
+   end '=';
+
+   operator {public} '=' (l : MatrixOfString; r : Matrix) : boolean;
+   begin
+      return MatrixOfStringToMatrix(l).Equals(r)
+   end '=';
+
+   operator {public} '=' (l : MatrixOfNumber; r : Matrix) : boolean;
+   begin
+      return MatrixOfNumberToMatrix(l).Equals(r)
+   end '=';
+
+   operator {public} '#' (l, r : Matrix) : boolean;
+   begin
+      return ~l.Equals(r)
+   end '#';
+
+   operator {public} '#' (l : Matrix; r : MatrixOfCard8) : boolean;
+   begin
+      return ~l.Equals(MatrixOfCard8ToMatrix(r))
+   end '#';
+
+   operator {public} '#' (l : Matrix; r : MatrixOfCard16) : boolean;
+   begin
+      return ~l.Equals(MatrixOfCard16ToMatrix(r))
+   end '#';
+
+   operator {public} '#' (l : Matrix; r : MatrixOfCard32) : boolean;
+   begin
+      return ~l.Equals(MatrixOfCard32ToMatrix(r))
+   end '#';
+
+   operator {public} '#' (l : Matrix; r : MatrixOfCard64) : boolean;
+   begin
+      return ~l.Equals(MatrixOfCard64ToMatrix(r))
+   end '#';
+
+   operator {public} '#' (l : Matrix; r : MatrixOfInt8) : boolean;
+   begin
+      return ~l.Equals(MatrixOfInt8ToMatrix(r))
+   end '#';
+
+   operator {public} '#' (l : Matrix; r : MatrixOfInt16) : boolean;
+   begin
+      return ~l.Equals(MatrixOfInt16ToMatrix(r))
+   end '#';
+
+   operator {public} '#' (l : Matrix; r : MatrixOfInt32) : boolean;
+   begin
+      return ~l.Equals(MatrixOfInt32ToMatrix(r))
+   end '#';
+
+   operator {public} '#' (l : Matrix; r : MatrixOfInt64) : boolean;
+   begin
+      return ~l.Equals(MatrixOfInt64ToMatrix(r))
+   end '#';
+
+   operator {public} '#' (l : Matrix; r : MatrixOfReal32) : boolean;
+   begin
+      return ~l.Equals(MatrixOfReal32ToMatrix(r))
+   end '#';
+
+   operator {public} '#' (l : Matrix; r : MatrixOfReal64) : boolean;
+   begin
+      return ~l.Equals(MatrixOfReal64ToMatrix(r))
+   end '#';
+
+   operator {public} '#' (l : Matrix; r : MatrixOfString) : boolean;
+   begin
+      return ~l.Equals(MatrixOfStringToMatrix(r))
+   end '#';
+
+   operator {public} '#' (l : Matrix; r : MatrixOfNumber) : boolean;
+   begin
+      return ~l.Equals(MatrixOfNumberToMatrix(r))
+   end '#';
+
+   operator {public} '#' (l : MatrixOfCard8; r : Matrix) : boolean;
+   begin
+      return ~MatrixOfCard8ToMatrix(l).Equals(r)
+   end '#';
+
+   operator {public} '#' (l : MatrixOfCard16; r : Matrix) : boolean;
+   begin
+      return ~MatrixOfCard16ToMatrix(l).Equals(r)
+   end '#';
+
+   operator {public} '#' (l : MatrixOfCard32; r : Matrix) : boolean;
+   begin
+      return ~MatrixOfCard32ToMatrix(l).Equals(r)
+   end '#';
+
+   operator {public} '#' (l : MatrixOfCard64; r : Matrix) : boolean;
+   begin
+      return ~MatrixOfCard64ToMatrix(l).Equals(r)
+   end '#';
+
+   operator {public} '#' (l : MatrixOfInt8; r : Matrix) : boolean;
+   begin
+      return ~MatrixOfInt8ToMatrix(l).Equals(r)
+   end '#';
+
+   operator {public} '#' (l : MatrixOfInt16; r : Matrix) : boolean;
+   begin
+      return ~MatrixOfInt16ToMatrix(l).Equals(r)
+   end '#';
+
+   operator {public} '#' (l : MatrixOfInt32; r : Matrix) : boolean;
+   begin
+      return ~MatrixOfInt32ToMatrix(l).Equals(r)
+   end '#';
+
+   operator {public} '#' (l : MatrixOfInt64; r : Matrix) : boolean;
+   begin
+      return ~MatrixOfInt64ToMatrix(l).Equals(r)
+   end '#';
+
+   operator {public} '#' (l : MatrixOfReal32; r : Matrix) : boolean;
+   begin
+      return ~MatrixOfReal32ToMatrix(l).Equals(r)
+   end '#';
+
+   operator {public} '#' (l : MatrixOfReal64; r : Matrix) : boolean;
+   begin
+      return ~MatrixOfReal64ToMatrix(l).Equals(r)
+   end '#';
+
+   operator {public} '#' (l : MatrixOfString; r : Matrix) : boolean;
+   begin
+      return ~MatrixOfStringToMatrix(l).Equals(r)
+   end '#';
+
+   operator {public} '#' (l : MatrixOfNumber; r : Matrix) : boolean;
+   begin
+      return ~MatrixOfNumberToMatrix(l).Equals(r)
+   end '#';
+
+   (* arithemtic operators *)
+
+   operator {public} '+' (l, r : Matrix) : Matrix;
+   begin
+      return Matrix(l.Add(r))
+   end '+';
+
+   operator {public} '+' (l : Matrix; r : MatrixOfCard8) : Matrix;
+   begin
+      return Matrix(l.Add(MatrixOfCard8ToMatrix(r)))
+   end '+';
+
+   operator {public} '+' (l : Matrix; r : MatrixOfCard16) : Matrix;
+   begin
+      return Matrix(l.Add(MatrixOfCard16ToMatrix(r)))
+   end '+';
+
+   operator {public} '+' (l : Matrix; r : MatrixOfCard32) : Matrix;
+   begin
+      return Matrix(l.Add(MatrixOfCard32ToMatrix(r)))
+   end '+';
+
+   operator {public} '+' (l : Matrix; r : MatrixOfCard64) : Matrix;
+   begin
+      return Matrix(l.Add(MatrixOfCard64ToMatrix(r)))
+   end '+';
+
+   operator {public} '+' (l : Matrix; r : MatrixOfInt8) : Matrix;
+   begin
+      return Matrix(l.Add(MatrixOfInt8ToMatrix(r)))
+   end '+';
+
+   operator {public} '+' (l : Matrix; r : MatrixOfInt16) : Matrix;
+   begin
+      return Matrix(l.Add(MatrixOfInt16ToMatrix(r)))
+   end '+';
+
+   operator {public} '+' (l : Matrix; r : MatrixOfInt32) : Matrix;
+   begin
+      return Matrix(l.Add(MatrixOfInt32ToMatrix(r)))
+   end '+';
+
+   operator {public} '+' (l : Matrix; r : MatrixOfInt64) : Matrix;
+   begin
+      return Matrix(l.Add(MatrixOfInt64ToMatrix(r)))
+   end '+';
+
+   operator {public} '+' (l : Matrix; r : MatrixOfReal32) : Matrix;
+   begin
+      return Matrix(l.Add(MatrixOfReal32ToMatrix(r)))
+   end '+';
+
+   operator {public} '+' (l : Matrix; r : MatrixOfReal64) : Matrix;
+   begin
+      return Matrix(l.Add(MatrixOfReal64ToMatrix(r)))
+   end '+';
+
+   operator {public} '+' (l : Matrix; r : MatrixOfString) : Matrix;
+   begin
+      return Matrix(l.Add(MatrixOfStringToMatrix(r)))
+   end '+';
+
+   operator {public} '+' (l : Matrix; r : MatrixOfNumber) : Matrix;
+   begin
+      return Matrix(l.Add(MatrixOfNumberToMatrix(r)))
+   end '+';
+
+   operator {public} '+' (l : MatrixOfCard8; r : Matrix) : Matrix;
+   begin
+      return Matrix(MatrixOfCard8ToMatrix(l).Add(r))
+   end '+';
+
+   operator {public} '+' (l : MatrixOfCard16; r : Matrix) : Matrix;
+   begin
+      return Matrix(MatrixOfCard16ToMatrix(l).Add(r))
+   end '+';
+
+   operator {public} '+' (l : MatrixOfCard32; r : Matrix) : Matrix;
+   begin
+      return Matrix(MatrixOfCard32ToMatrix(l).Add(r))
+   end '+';
+
+   operator {public} '+' (l : MatrixOfCard64; r : Matrix) : Matrix;
+   begin
+      return Matrix(MatrixOfCard64ToMatrix(l).Add(r))
+   end '+';
+
+   operator {public} '+' (l : MatrixOfInt8; r : Matrix) : Matrix;
+   begin
+      return Matrix(MatrixOfInt8ToMatrix(l).Add(r))
+   end '+';
+
+   operator {public} '+' (l : MatrixOfInt16; r : Matrix) : Matrix;
+   begin
+      return Matrix(MatrixOfInt16ToMatrix(l).Add(r))
+   end '+';
+
+   operator {public} '+' (l : MatrixOfInt32; r : Matrix) : Matrix;
+   begin
+      return Matrix(MatrixOfInt32ToMatrix(l).Add(r))
+   end '+';
+
+   operator {public} '+' (l : MatrixOfInt64; r : Matrix) : Matrix;
+   begin
+      return Matrix(MatrixOfInt64ToMatrix(l).Add(r))
+   end '+';
+
+   operator {public} '+' (l : MatrixOfReal32; r : Matrix) : Matrix;
+   begin
+      return Matrix(MatrixOfReal32ToMatrix(l).Add(r))
+   end '+';
+
+   operator {public} '+' (l : MatrixOfReal64; r : Matrix) : Matrix;
+   begin
+      return Matrix(MatrixOfReal64ToMatrix(l).Add(r))
+   end '+';
+
+   operator {public} '+' (l : MatrixOfString; r : Matrix) : Matrix;
+   begin
+      return Matrix(MatrixOfStringToMatrix(l).Add(r))
+   end '+';
+
+   operator {public} '+' (l : MatrixOfNumber; r : Matrix) : Matrix;
+   begin
+      return Matrix(MatrixOfNumberToMatrix(l).Add(r))
+   end '+';
+
+   operator {public} '-' (l, r : Matrix) : Matrix;
+   begin
+      return Matrix(l.Subtract(r))
+   end '-';
+
+   operator {public} '-' (l : Matrix; r : MatrixOfCard8) : Matrix;
+   begin
+      return Matrix(l.Subtract(MatrixOfCard8ToMatrix(r)))
+   end '-';
+
+   operator {public} '-' (l : Matrix; r : MatrixOfCard16) : Matrix;
+   begin
+      return Matrix(l.Subtract(MatrixOfCard16ToMatrix(r)))
+   end '-';
+
+   operator {public} '-' (l : Matrix; r : MatrixOfCard32) : Matrix;
+   begin
+      return Matrix(l.Subtract(MatrixOfCard32ToMatrix(r)))
+   end '-';
+
+   operator {public} '-' (l : Matrix; r : MatrixOfCard64) : Matrix;
+   begin
+      return Matrix(l.Subtract(MatrixOfCard64ToMatrix(r)))
+   end '-';
+
+   operator {public} '-' (l : Matrix; r : MatrixOfInt8) : Matrix;
+   begin
+      return Matrix(l.Subtract(MatrixOfInt8ToMatrix(r)))
+   end '-';
+
+   operator {public} '-' (l : Matrix; r : MatrixOfInt16) : Matrix;
+   begin
+      return Matrix(l.Subtract(MatrixOfInt16ToMatrix(r)))
+   end '-';
+
+   operator {public} '-' (l : Matrix; r : MatrixOfInt32) : Matrix;
+   begin
+      return Matrix(l.Subtract(MatrixOfInt32ToMatrix(r)))
+   end '-';
+
+   operator {public} '-' (l : Matrix; r : MatrixOfInt64) : Matrix;
+   begin
+      return Matrix(l.Subtract(MatrixOfInt64ToMatrix(r)))
+   end '-';
+
+   operator {public} '-' (l : Matrix; r : MatrixOfReal32) : Matrix;
+   begin
+      return Matrix(l.Subtract(MatrixOfReal32ToMatrix(r)))
+   end '-';
+
+   operator {public} '-' (l : Matrix; r : MatrixOfReal64) : Matrix;
+   begin
+      return Matrix(l.Subtract(MatrixOfReal64ToMatrix(r)))
+   end '-';
+
+   operator {public} '-' (l : Matrix; r : MatrixOfString) : Matrix;
+   begin
+      return Matrix(l.Subtract(MatrixOfStringToMatrix(r)))
+   end '-';
+
+   operator {public} '-' (l : Matrix; r : MatrixOfNumber) : Matrix;
+   begin
+      return Matrix(l.Subtract(MatrixOfNumberToMatrix(r)))
+   end '-';
+
+   operator {public} '-' (l : MatrixOfCard8; r : Matrix) : Matrix;
+   begin
+      return Matrix(MatrixOfCard8ToMatrix(l).Subtract(r))
+   end '-';
+
+   operator {public} '-' (l : MatrixOfCard16; r : Matrix) : Matrix;
+   begin
+      return Matrix(MatrixOfCard16ToMatrix(l).Subtract(r))
+   end '-';
+
+   operator {public} '-' (l : MatrixOfCard32; r : Matrix) : Matrix;
+   begin
+      return Matrix(MatrixOfCard32ToMatrix(l).Subtract(r))
+   end '-';
+
+   operator {public} '-' (l : MatrixOfCard64; r : Matrix) : Matrix;
+   begin
+      return Matrix(MatrixOfCard64ToMatrix(l).Subtract(r))
+   end '-';
+
+   operator {public} '-' (l : MatrixOfInt8; r : Matrix) : Matrix;
+   begin
+      return Matrix(MatrixOfInt8ToMatrix(l).Subtract(r))
+   end '-';
+
+   operator {public} '-' (l : MatrixOfInt16; r : Matrix) : Matrix;
+   begin
+      return Matrix(MatrixOfInt16ToMatrix(l).Subtract(r))
+   end '-';
+
+   operator {public} '-' (l : MatrixOfInt32; r : Matrix) : Matrix;
+   begin
+      return Matrix(MatrixOfInt32ToMatrix(l).Subtract(r))
+   end '-';
+
+   operator {public} '-' (l : MatrixOfInt64; r : Matrix) : Matrix;
+   begin
+      return Matrix(MatrixOfInt64ToMatrix(l).Subtract(r))
+   end '-';
+
+   operator {public} '-' (l : MatrixOfReal32; r : Matrix) : Matrix;
+   begin
+      return Matrix(MatrixOfReal32ToMatrix(l).Subtract(r))
+   end '-';
+
+   operator {public} '-' (l : MatrixOfReal64; r : Matrix) : Matrix;
+   begin
+      return Matrix(MatrixOfReal64ToMatrix(l).Subtract(r))
+   end '-';
+
+   operator {public} '-' (l : MatrixOfString; r : Matrix) : Matrix;
+   begin
+      return Matrix(MatrixOfStringToMatrix(l).Subtract(r))
+   end '-';
+
+   operator {public} '-' (l : MatrixOfNumber; r : Matrix) : Matrix;
+   begin
+      return Matrix(MatrixOfNumberToMatrix(l).Subtract(r))
+   end '-';
+
+   operator {public} '*' (l : Card8; r : Matrix) : Matrix;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Matrix(r.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Card16; r : Matrix) : Matrix;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Matrix(r.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Card32; r : Matrix) : Matrix;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Matrix(r.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Card64; r : Matrix) : Matrix;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Matrix(r.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Int8; r : Matrix) : Matrix;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Matrix(r.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Int16; r : Matrix) : Matrix;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Matrix(r.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Int32; r : Matrix) : Matrix;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Matrix(r.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Int64; r : Matrix) : Matrix;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Matrix(r.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Real32; r : Matrix) : Matrix;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Matrix(r.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Real64; r : Matrix) : Matrix;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Matrix(r.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : string; r : Matrix) : Matrix;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Matrix(r.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : N.Number; r : Matrix) : Matrix;
+   begin
+      return Matrix(r.Multiply(l))
+   end '*';
+
+   operator {public} '/' (l : Matrix; r : Card8) : Matrix;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Matrix(l.Divide(n))
+   end '/';
+
+   operator {public} '/' (l : Matrix; r : Card16) : Matrix;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Matrix(l.Divide(n))
+   end '/';
+
+   operator {public} '/' (l : Matrix; r : Card32) : Matrix;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Matrix(l.Divide(n))
+   end '/';
+
+   operator {public} '/' (l : Matrix; r : Card64) : Matrix;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Matrix(l.Divide(n))
+   end '/';
+
+   operator {public} '/' (l : Matrix; r : Int8) : Matrix;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Matrix(l.Divide(n))
+   end '/';
+
+   operator {public} '/' (l : Matrix; r : Int16) : Matrix;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Matrix(l.Divide(n))
+   end '/';
+
+   operator {public} '/' (l : Matrix; r : Int32) : Matrix;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Matrix(l.Divide(n))
+   end '/';
+
+   operator {public} '/' (l : Matrix; r : Int64) : Matrix;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Matrix(l.Divide(n))
+   end '/';
+
+   operator {public} '/' (l : Matrix; r : Real32) : Matrix;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Matrix(l.Divide(n))
+   end '/';
+
+   operator {public} '/' (l : Matrix; r : Real64) : Matrix;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Matrix(l.Divide(n))
+   end '/';
+
+   operator {public} '/' (l : Matrix; r : string) : Matrix;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Matrix(l.Divide(n))
+   end '/';
+
+   operator {public} '/' (l : Matrix; r : N.Number) : Matrix;
+   begin
+      return Matrix(l.Divide(r))
+   end '/';
+
+   (* basic matrix functions *)
+
+   (* maximum column norm *)
+   procedure {public} OneNorm (m : Matrix) : N.Number;
+   var
+      i, j : integer;
+      x, y : N.Number;
+   begin
+      x := 0;
+      for j := 1 to m.Columns() do
+         y := 0;
+         for i := 1 to m.Rows() do
+            y := y + M.Abs(m[i,j])
+         end;
+         x := M.Max(x, y)
+      end;
+      return x
+   end OneNorm;
+
+   (* sqrt(tr(M^T M)) *)
+   procedure {public} FrobeniusNorm (m : Matrix) : N.Number;
+   begin
+      return M.Sqrt(m.TransposeDoubleDot(m))
+   end FrobeniusNorm;
+
+   (* maximum row norm *)
+   procedure {public} InfinityNorm (m : Matrix) : N.Number;
+   var
+      i, j : integer;
+      x, y : N.Number;
+   begin
+      x := 0;
+      for i := 1 to m.Rows() do
+         y := 0;
+         for j := 1 to m.Columns() do
+            y := y + M.Abs(m[i,j])
+         end;
+         x := M.Max(x, y)
+      end;
+      return x
+   end InfinityNorm;
+
+   (* returns  M_{ij} = l_i r_j *)
+   procedure {public} VectorProduct (l, r : A.Array) : Matrix;
+   var
+      cols, i, j, rows : integer;
+      m : Matrix;
+   begin
+      cols := r.Length();
+      rows := l.Length();
+      if (cols > 0) & (rows > 0) then
+         m.Create(rows, cols);
+         for i := 1 to rows do
+            for j := 1 to cols do
+               m[i,j] := l[i]*r[j]
+            end
+         end
+      end;
+      return m
+   end VectorProduct;
+
+begin
+   zero := 0
+end Matrices.

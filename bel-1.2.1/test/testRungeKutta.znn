@@ -1,0 +1,111 @@
+module {public} Main;
+
+   (* Tests module RungeKutta *)
+
+   import
+      System.Int32        as Int32,
+      Bel.IO.Log          as L,
+      Bel.MATH.Functions  as Fn,
+      Bel.MF.Numbers      as N,
+      Bel.MF.Arrays       as A,
+      Bel.MATH.RungeKutta as RK;
+
+   procedure {private} Write (i : integer; x, y, e : N.Number);
+   var
+      err : N.Number;
+      j : Int32;
+   begin
+      j := i;
+      writeln("step = ", j.ToString());
+      write("  x =", x.Typeset());
+      writeln(",  y =", y.Typeset());
+      writeln("      solver error =", e.Typeset());
+      err := Fn.Abs(y - RelaxSoln(x));
+      writeln("      actual error =", err.Typeset())
+   end Write;
+
+   procedure {public} Relax (x : N.Number; y : A.Array) : A.Array;
+   var
+      f : A.Array;
+   begin
+      f := -y;
+      return f
+   end Relax;
+
+   procedure {private} RelaxSoln (x : N.Number) : N.Number;
+   var
+      y, z : N.Number;
+   begin
+      z := -x;
+      y := Fn.Exp(z);
+      return y
+   end RelaxSoln;
+
+   procedure {public} Run;
+   var
+      done, dynamic : boolean;
+      e, h, h0, t, x : N.Number;
+      i, order : integer;
+      j : Int32;
+      o : RK.Order;
+      r : real;
+      s : string;
+      y : A.Array;
+   begin
+      i := 0;
+      r := 0.0;
+      s := "";
+      order := 0;
+      done := false;
+      write("Choose the order of the integrator [2,3,4] :  ");
+      readln(order);
+      if order = 2 then
+         o := RK.Order.second
+      elsif order = 3 then
+         o := RK.Order.third
+      else
+         o := RK.Order.fourth
+      end;
+      writeln("To integrate  dy/dx = -y,  y(0) = 1,  from  0 to 5:");
+      write("   What step size do you want the integrator to start at?  ");
+      readln(r);
+      h := r;
+      h0 := h;
+      write("   Do you want the step size to be fixed or dynamic [f,d]? ");
+      readln(s);
+      if (s = "f") or (s = "F") then
+         dynamic := false
+      else
+         dynamic := true
+      end;
+      write("   What error tolerance do you want?  E.g., 0.01, 0.0001.  ");
+      readln(r);
+      t := r;
+      i := 0;
+      x := 0;
+      e := 0;
+      y.Create(1);
+      y[1] := 1;
+      Write(i, x, y[1], e);
+      repeat
+         inc(i);
+         RK.Solve(Relax, t, o, x, y, h, e);
+         Write(i, x, y[1], e);
+         if x > 5 then
+            done := true
+         end;
+         if ~dynamic then
+            h := h0
+         end
+      until done;
+      j := RK.count;
+      writeln("Integration took " + j.ToString() + " function evaluations");
+      j := RK.count div (3*order);
+      writeln("      over " + j.ToString() + " integration steps.");
+      writeln
+   end Run;
+
+begin
+   Run;
+   L.Close
+end Main.

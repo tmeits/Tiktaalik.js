@@ -1,0 +1,254 @@
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(*       BBBB      EEEEE     L         The                                    *)
+(*       B   B     E         L           BIOLOGICAL                           *)
+(*       BBBB      EEE       L           ENGINEERING                          *)
+(*       B    B    E         L           LABORATORY                           *)
+(*       BBBBB     EEEEEE    LLLLLL        @ Saginaw Valley State University  *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Copyright 2008-2010, Alan D. Freed                                         *)
+(*                                                                            *)
+(* This file is part of the BEL suite of .NET/mono libraries.                 *)
+(*                                                                            *)
+(* BEL is a free software: you can redistribute it and/or modify it under the *)
+(* terms of the GNU Lesser General Public License as published by the Free    *)
+(* Software Foundation, either version 3 of the License, or (at your option)  *)
+(* any later version.                                                         *)
+(*                                                                            *)
+(* BEL is distributed in the hope that it will be useful, but WITHOUT ANY     *)
+(* WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS  *)
+(* FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License for   *)
+(* more details.                                                              *)
+(*                                                                            *)
+(* You should have received a copy of the GNU Lesser General Public License   *)
+(* along with BEL.  If not, see <http://www.gnu.org/licenses/>.               *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* This file is 7 of 7 creating a genetic algorithm for parameter estimation  *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* SGA stands for Simple Genetic Algorithm.  SGA was originally written in    *)
+(* Pascal, and is nicely documented in the textbook:                          *)
+(*   Goldberg, D. E., "Genetic Algorithms in search, optimization & machine   *)
+(*                     learning," Addison-Wesley, Boston, 1989.               *)
+(* David Goldberg's original SGA code carries the following copywrite notice: *)
+(*   { A Simple Genetic Algorithm - SGA - v1.0 }                              *)
+(*   { (c)   David Edward Goldberg  1986       }                              *)
+(*   {       All Rights Reserved               }                              *)
+(* This reinterpretation of Goldberg's original SGA is written in Zonnon - a  *)
+(* direct decendent of Pascal.  It is a complete rewrite of SGA.  In this     *)
+(* rewrite, efforts have been made to keep true to the spirit of Goldberg's   *)
+(* original SGA algorithms.                                                   *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Procedure                                                                  *)
+(*   Optimize  : interface to lower-level modules of the genetic algorithm    *)
+(*      fileNameForReport                                                     *)
+(*         string containing the name you want to assign to the output file   *)
+(*      expControl                                                            *)
+(*         matrix that contains the experimental control/independent data     *)
+(*            rows    have the independent variables recorded at each datum   *)
+(*            columns have the individual experimental/measured datum points  *)
+(*      expInput                                                              *)
+(*         matrix that contains the inputs for the input/output pairs         *)
+(*            rows    same number as the dependent variables at each datum    *)
+(*            columns have the individual experimental/measured datum points  *)
+(*      expOutput                                                             *)
+(*         matrix that contains the outputs for the input/output pairs        *)
+(*            rows    have the dependent variables recorded at each datum     *)
+(*            columns have the individual experimental/measured datum points  *)
+(*      expEndsAtIndex                                                        *)
+(*         array that specifies the last index for each successive experiment *)
+(*            length  equals the number of concatenated experiments           *)
+(*      decimateTo                                                            *)
+(*         array that specifies how many of the data to use per experiment    *)
+(*            length  equals the number of concatenated experiments           *)
+(*      numericalModel                                                        *)
+(*         a function with the footprint                                      *)
+(*            model(parameters : A.Array; controlOrInputs : M.Matrix;         *)
+(*                  var responseOrOutputs : M.Matrix)                         *)
+(*      solveModelWithDecimatedDataOnly                                       *)
+(*         a boolean flag switching between all and decimated data sets       *)
+(*      fixedParameters                                                       *)
+(*         those parameters whose values are not allowed to vary              *)
+(*      alienParameters                                                       *)
+(*         initial guesses for those parameters that are allowed to vary      *)
+(*      minParameters                                                         *)
+(*         lower bounds on the range for those parameters allowed to vary     *)
+(*      maxParameters                                                         *)
+(*         upper bounds on the range for those parameters allowed to vary     *)
+(*      varyParameters                                                        *)
+(*         boolean toggles specifying if each parameter is fixed or varies    *)
+(*      dimensionOfSchema                                                     *)
+(*         provides the largest building block size to be captured            *)
+(*      numberOfSignificantFigures                                            *)
+(*         significant figures assigned to the decoder; typically, 2-4        *)
+(*      confidenceIntervalForCertainty                                        *)
+(*         one of: 60%, 80%, 90%, 95%, 97.5%, 99% or 99.5%                    *)
+(*      probabilityOfCrossover                                                *)
+(*         odds for fertilization during mating; typically, 0.5-0.75          *)
+(*      probabilityOfMutation                                                 *)
+(*         odds for mutation; typically, 0.0001-0.00001                       *)
+(*      chromosomeType                                                        *)
+(*         either haploid (single strand) or diploid (double strand)          *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+
+module {public} Bel.GA.GeneticAlgorithm;
+
+   import
+      System.Int32 as Int,
+      System.IO.StreamWriter as StreamWriter,
+      Bel.IO.TextFiles as F,
+      Bel.MF.Numbers  as N,
+      Bel.MF.Arrays   as A,
+      Bel.MF.Matrices as M,
+      Bel.MATH.Distributions as D,
+      Bel.GA.Statistics as S,
+      Bel.GA.Genomes    as G,
+      Bel.GA.Colonies   as C;
+
+   var {private}
+      storeAt : array 36 of integer;
+
+   procedure {public} Optimize (fileNameForReport : string;
+                                expControl, expInput, expOutput : M.Matrix;
+                                expEndsAtIndex, decimateTo : A.Array;
+                                method : S.LeastSquares;
+                                numericalModel : S.Model;
+                                solveModelWithDecimatedDataOnly : boolean;
+                                fixedParameters, alienParameters,
+                                minParameters, maxParameters : A.Array;
+                                varyParameters : array * of boolean;
+                                dimensionOfSchemata,
+                                numberOfSignificantFigures : integer;
+                                confidenceIntervalForCertainty : D.Certainty;
+                                probabilityOfCrossover,
+                                probabilityOfMutation,
+                                probabilityOfImmigration : N.Number;
+                                chromosomeType : G.ChromosomeType);
+   var
+      bestParameters : A.Array;
+      colony : C.Colony;
+      converged : boolean;
+      file, fileij, s : string;
+      goodParameters : M.Matrix;
+      i, j, k, par : integer;
+      intI, intJ : Int;
+      nx, ny : N.Number;
+      sw : StreamWriter;
+   begin
+      converged := false;
+      sw := F.OpenWriter(fileNameForReport);
+      colony := new C.Colony;
+      colony.ReportHeader(sw);
+      colony.Initialize(expControl, expInput, expOutput,
+                        expEndsAtIndex, decimateTo, method,
+                        numericalModel, solveModelWithDecimatedDataOnly,
+                        fixedParameters, alienParameters, minParameters,
+                        maxParameters, varyParameters,
+                        dimensionOfSchemata, numberOfSignificantFigures,
+                        confidenceIntervalForCertainty,
+                        probabilityOfCrossover, probabilityOfMutation,
+                        probabilityOfImmigration, chromosomeType);
+      colony.ReportBody(sw);
+      i := 1;
+      j := 1;
+      repeat
+         inc(j);
+         colony.Propagate(converged);
+         if j = storeAt[i] then
+            inc(i);
+            colony.ReportBody(sw)
+         end;
+         if i = 46 then
+            converged := true
+         end
+      until converged;
+      if j # storeAt[i-1] then
+         colony.ReportBody(sw)
+      end;
+      colony.ConfidentParameters(confidenceIntervalForCertainty,
+                                 bestParameters, goodParameters);
+      colony.ReportFooter(bestParameters, goodParameters, sw);
+      F.CloseWriter(sw);
+      (* write the 1000 confident parameter sets to paired files *)
+      par := bestParameters.Length();
+      file := fileNameForReport + "_parameters_";
+      for i := 1 to par-1 do
+         intI := i;
+         for j := i+1 to par do
+            intJ := j;
+            fileij := file + "best_";
+            fileij := fileij + intI.ToString() + ":";
+            fileij := fileij + intJ.ToString();
+            sw := F.OpenWriter(fileij);
+            nx := bestParameters[i];
+            ny := bestParameters[j];
+            s := nx.ToString(5) + "   " + ny.ToString(5);
+            sw.WriteLine(s);
+            sw.Flush;
+            F.CloseWriter(sw);
+            fileij := file + intI.ToString() + ":";
+            fileij := fileij + intJ.ToString();
+            sw := F.OpenWriter(fileij);
+            for k := 1 to goodParameters.Columns() do
+               nx := goodParameters[i,k];
+               ny := goodParameters[j,k];
+               s := nx.ToString(5) + "   " + ny.ToString(5);
+               sw.WriteLine(s);
+               sw.Flush
+            end;
+            F.CloseWriter(sw)
+         end
+      end;
+      writeln("Optimization is complete.");
+      writeln;
+      s := "Statistics of this run are in file: " + fileNameForReport
+         + ".txt.";
+      writeln(s);
+      writeln;
+      writeln("Confidence regions can be plotted as");
+      s := "   clouds of data points using files: " + file + "i:j.txt";
+      writeln(s);
+      s := "   with the best parameters being in: " + file + "best_i:j.txt.";
+      writeln(s);
+      writeln("   The number of data points in each cloud is the");
+      writeln("   'number that are viable' recorded in the report.");
+      writeln
+   end Optimize;
+
+begin
+   (* store at logarithmically increasing intervals *)
+   storeAt[0] := 1;
+   storeAt[1] := 2;
+   storeAt[2] := 3;
+   storeAt[3] := 5;
+   storeAt[4] := 7;
+   storeAt[5] := 10;
+   storeAt[6] := 13;
+   storeAt[7] := 16;
+   storeAt[8] := 20;
+   storeAt[9] := 25;
+   storeAt[10] := 32;
+   storeAt[11] := 40;
+   storeAt[12] := 50;
+   storeAt[13] := 63;
+   storeAt[14] := 80;
+   storeAt[15] := 100;
+   storeAt[16] := 125;
+   storeAt[17] := 155;
+   storeAt[18] := 195;
+   storeAt[19] := 250;
+   storeAt[20] := 320;
+   storeAt[21] := 400;
+   storeAt[22] := 500;
+   storeAt[23] := 630;
+   storeAt[24] := 800;
+   storeAt[25] := 1000;
+   storeAt[26] := 1250;
+   storeAt[27] := 1550;
+   storeAt[28] := 1950;
+   storeAt[29] := 2500;
+   storeAt[30] := 3200;
+   storeAt[31] := 4000;
+   storeAt[32] := 5000;
+   storeAt[33] := 6300;
+   storeAt[34] := 8000;
+   storeAt[35] := 10000
+end GeneticAlgorithm.

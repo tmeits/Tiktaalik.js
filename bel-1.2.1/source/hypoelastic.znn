@@ -1,0 +1,324 @@
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(*       BBBB      EEEEE     L         The                                    *)
+(*       B   B     E         L           BIOLOGICAL                           *)
+(*       BBBB      EEE       L           ENGINEERING                          *)
+(*       B    B    E         L           LABORATORY                           *)
+(*       BBBBB     EEEEEE    LLLLLL        @ Saginaw Valley State University  *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Copyright 2008-2010, Alan D. Freed                                         *)
+(*                                                                            *)
+(* This file is part of the BEL suite of .NET/mono libraries.                 *)
+(*                                                                            *)
+(* BEL is a free software: you can redistribute it and/or modify it under the *)
+(* terms of the GNU Lesser General Public License as published by the Free    *)
+(* Software Foundation, either version 3 of the License, or (at your option)  *)
+(* any later version.                                                         *)
+(*                                                                            *)
+(* BEL is distributed in the hope that it will be useful, but WITHOUT ANY     *)
+(* WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS  *)
+(* FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License for   *)
+(* more details.                                                              *)
+(*                                                                            *)
+(* You should have received a copy of the GNU Lesser General Public License   *)
+(* along with BEL.  If not, see <http://www.gnu.org/licenses/>.               *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Provides a driver to solve biaxial BVPs for a hypoelastic tissue model.    *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* The physical fields of this boundary-value problem are stored in the type: *)
+(*    Datum        - implements Bel.Object for storing in data structures     *)
+(*       experimentally determined fields                                     *)
+(*          t      - time                                                     *)
+(*          F      - deformation gradient                                     *)
+(*          L      - velocity gradient                                        *)
+(*          P      - first Piola-Kirchhoff stress                             *)
+(*       theoretically deterimined fields                                     *)
+(*          wp     - Lagrange multiplier                                      *)
+(*          E      - strain                                                   *)
+(*          T      - Kirchhoff or Cauchy stress                               *)
+(* These attachment points are visible and writable-to outside this module.   *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Variable                                                                   *)
+(*    dataTree            - a data structure that manages hypoelastic data    *)
+(*                          keys for tree insertion are created such that:    *)
+(*                             thousands slot is for different experiments    *)
+(*                             ones-tens-hundreds slots hold the data points  *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Procedures                                                                 *)
+(*    InitializeDataTree  - prepare the exported 'dataTree' for use           *)
+(*    BuildDataTree       - build a branch in the tree (for one experiment)   *)
+(*       experimentNumber      the experiment number for this primary branch  *)
+(*       numberOfData          [0..numberOdData] secondary branches for data  *)
+(*    Solve               - fills in the theoretical fields of the 'dataTree' *)
+(*       parameters            provides the material constants for the model  *)
+(*    Integrate                                                               *)
+(*       mu     :  shear modulus                                              *)
+(*       beta   :  Fung's parameter                                           *)
+(*       dTime  :  the time increment establishing step-size of integration   *)
+(*       currP  :  the current  value for the Lagrange multiplier (pressure)  *)
+(*       currE  :  the current  value for the strain field being integrated   *)
+(*       currT  :  the current  value for the stress field being integrated   *)
+(*       hatF   :  the deformation gradient over the increment dTime in time  *)
+(*       currL  :  the velocity gradient at the current moment in time        *)
+(*       nextL  :  the velocity gradient for the next moment in time          *)
+(*    returned variables                                                      *)
+(*       nextP  :  the updated  value for the Lagrange multiplier             *)
+(*       nextE  :  the updated  value for the strain field being integrated   *)
+(*       nextT  :  the updated  value for the stress field being integrated   *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* The basic idea is that an external program loads the experimental half of  *)
+(* the 'dataTree' and then calls the solver to fill in the theoretical half.  *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Multiple experiments can be solved simultaneously.  Each experiment has    *)
+(* keys that increment by the thousands, while the individual datum points    *)
+(* that comprise an experiment can range from 0..999 so, for example, a need  *)
+(* to solve two BVPs: the first with 99 data points, and the second with 250; *)
+(* would have keys in 'dataTree' that range from 1000..1099 and 2000..2250.   *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Keys 1000, 2000, etc. are considered to be the initial conditions.  So for *)
+(* these keys, the external program must also supply their 'theoretical' data.*)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Reference:  Freed, A.D., Einstein, D.R. and Sacks, M.S., "Hypoelastic      *)
+(*             Soft-Tissues, Part II: In-Plane Biaxial Experiments", Acta     *)
+(*             Mechanica                                                      *)
+(* Reference:  Freed, A.D., Einstein, D.R. and Sacks, M.S., "Hypoelastic      *)
+(*             Soft-Tissue Composites".  In prepartaion for: Biomechanics and *)
+(*             Modeling in Mechanobiology.                                    *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+
+module {public} Bel.TM.Hypoelastic.Isotropic;
+
+   import
+      System.IO.BinaryReader as BinaryReader,
+      System.IO.BinaryWriter as BinaryWriter,
+      Bel.IO.Log as Log,
+      Bel.DATA.Keys as Keys,
+      Bel.DATA.Tree as Tree,
+      Bel.MF.Numbers as N,
+      Bel.PF.Units    as U,
+      Bel.PF.Scalars  as S,
+      Bel.PF.Vectors2 as V,
+      Bel.PF.Tensors2 as TF,
+      Bel.BI.Kinematics as K,
+      Bel.BI.Kinetics   as Ki,
+      Bel.Object as Object;
+
+   type {public, value} Datum = object implements Object
+
+      var {public}
+         (* assign externally, before running the solver  *)
+         t : S.Scalar;   (* time                          *)
+         F : TF.Tensor;  (* deformation gradient          *)
+         L : TF.Tensor;  (* rate of deformation-gradient  *)
+         P : TF.Tensor;  (* experimental 1st PK stress    *)
+         (* data created internally by running the solver *)
+         wp : S.Scalar;  (* Lagrange multiplier           *)
+         E : TF.Tensor;  (* strain, Freed's definition    *)
+         T : TF.Tensor;  (* theoretical Kirchhoff stress  *)
+
+      procedure {public} Initialize
+         implements Object.Initialize;
+      begin
+         t.Initialize;
+         t.SetUnits(U.Time);
+         wp.Initialize;
+         wp.SetUnits(U.Stress);
+         E.Initialize;
+         F.Initialize;
+         L.Initialize;
+         L.SetUnits(U.Rate);
+         P.Initialize;
+         P.SetUnits(U.Stress);
+         T.Initialize;
+         T.SetUnits(U.Stress)
+      end Initialize;
+
+      procedure {public} Nullify
+         implements Object.Nullify;
+      begin
+         t.Nullify;
+         wp.Nullify;
+         E.Nullify;
+         F.Nullify;
+         L.Nullify;
+         P.Nullify;
+         T.Nullify
+      end Nullify;
+
+      procedure {public} Load (br : BinaryReader)
+         implements Object.Load;
+      begin
+         t.Load(br);
+         wp.Load(br);
+         E.Load(br);
+         F.Load(br);
+         L.Load(br);
+         P.Load(br);
+         T.Load(br)
+      end Load;
+
+      procedure {public} Store (bw : BinaryWriter)
+         implements Object.Store;
+      begin
+         t.Store(bw);
+         wp.Store(bw);
+         E.Store(bw);
+         F.Store(bw);
+         L.Store(bw);
+         P.Store(bw);
+         T.Store(bw)
+      end Store;
+
+      procedure {public} Clone () : object{Object}
+         implements Object.Clone;
+      var
+         d : Datum;
+         o : object{Object};
+      begin
+         d.Initialize;
+         o := Object(d);
+         return o
+      end Clone;
+
+   begin
+   end Datum;
+
+   type {private}
+      IntegerArray = array * of integer;
+
+   var {public}
+      dataTree : Tree;
+
+   var {private}
+      dataPoints : IntegerArray;
+      numberOfExperiments : integer;
+
+   procedure {public} InitializeDataTree;
+   begin
+      dataPoints := nil;
+      dataTree.Initialize;
+      numberOfExperiments := 0
+   end InitializeDataTree;
+
+   procedure {public} BuildDataTree (experimentNumber, numberOfData : integer );
+   var
+      dat : Datum;
+      i, j : integer;
+      key : Keys.Key;
+      oldDataPoints : IntegerArray;
+      success : boolean;
+   begin
+      for i := 0 to numberOfData do
+         dat.Initialize;
+         key := 1000*experimentNumber + i;
+         dataTree.Insert(dat, key, success);
+         if ~success then
+            Log.ErrorMessage(511,520,
+               "Bel.TM.Hypoelastic.IsotropicSolver.BuildDataTree")
+         end
+      end;
+      inc(numberOfExperiments);
+      oldDataPoints := dataPoints;
+      dataPoints := new IntegerArray(numberOfExperiments+1);
+      for i := 1 to numberOfExperiments-1 do
+         dataPoints[i] := oldDataPoints[i]
+      end;
+      dataPoints[numberOfExperiments] := numberOfData
+   end BuildDataTree;
+
+   procedure {public} Solve (mu, beta : S.Scalar);
+   var
+      currE, currF, currL, currT, hatF,
+      nextE, nextF, nextL, nextT : TF.Tensor;
+      cTime, currP, dTime, nTime, nextP : S.Scalar;
+      data0, data : Datum;
+      i, j : integer;
+      key0, key : Keys.Key;
+      obj : object{Object};
+      success : boolean;
+   begin
+      for i := 1 to numberOfExperiments do
+         (* load in the initial conditions *)
+         key0 := 1000*i;
+         dataTree.Find(key0, success);
+         if ~success then
+            Log.ErrorMessage(523,20,
+               "Bel.TM.Hypoelastic.IsotropicSolver.Solve")
+         end;
+         obj := dataTree.GetData();
+         data0 := Datum(obj);
+         nTime := data0.t;
+         nextP := data0.wp;
+         nextF := data0.F;
+         nextL := data0.L;
+         nextE := data0.E;
+         nextT := data0.T;
+         for j := 1 to dataPoints[i] do
+            cTime := nTime;
+            currP := nextP;
+            currF := nextF;
+            currL := nextL;
+            currE := nextE;
+            currT := nextT;
+            key := 1000*i + j;
+            dataTree.Find(key, success);
+            if ~success then
+               Log.ErrorMessage(523,20,
+                  "Bel.TM.Hypoelastic.IsotropicSolver.Solve")
+            end;
+            obj := dataTree.GetData();
+            data := Datum(obj);
+            nTime := data.t;
+            nextF := data.F;
+            nextL := data.L;
+            dTime := nTime - cTime;
+            hatF := K.HatF(currF, nextF);
+            Integrate(mu, beta, dTime, currP, currT,
+                      hatF, currL, nextL, nextP, nextT);
+            data.wp := nextP;
+            data.T := nextT;
+            nextE := K.E(dTime, currE, hatF, currL, nextL);
+            data.E := nextE;
+            dataTree.Update(data, key, success);
+            if ~success then
+               Log.ErrorMessage(521,20,
+                  "Bel.TM.Hypoelastic.IsotropicSolver.Solve")
+            end
+         end
+      end
+   end Solve;
+
+   procedure {public} Integrate (mu, beta, dTime, curWp : S.Scalar;
+                                 currT, hatF, currL, nextL : TF.Tensor;
+                                 var nexWp : S.Scalar; var nextT : TF.Tensor);
+   var
+      dArea, dCurP, dNexP, predP, trCrD, trNxD : S.Scalar;
+      currD, dCurT, diffT, dNexT, nextD, predT, pushT : TF.Tensor;
+   begin
+      currD := K.D(currL);
+      trCrD := TF.Trace(currD);
+      nextD := K.D(nextL);
+      trNxD := TF.Trace(nextD);
+      dArea := TF.Determinant(hatF);
+      (* predictor stage of the integration in configuration at step N *)
+      dCurP := -2*(mu + curWp)*trCrD;
+      predP := curWp + dTime*dCurP;
+      dCurT := 2*(mu + curWp)*(trCrD*TF.I + currD)
+             + beta*(currD.Dot(currT) + currT.Dot(currD))
+             + currL.Dot(currT) + currT.DotTranspose(currL);
+      predT := currT + dTime*dCurT;
+      (* corrector stage of the integration in configuration at step N+1 *)
+      dCurP := -2*(mu + predP)*trCrD;
+      dNexP := -2*(mu + predP/(dArea*dArea))*trNxD;
+      diffT := predT - currT;
+      dCurT := dCurT + currL.Dot(diffT) + diffT.DotTranspose(currL);
+      pushT := hatF.Dot(predT.DotTranspose(hatF));
+      dNexT := 2*(mu + predP)*(trNxD*TF.I + nextD)
+             + beta*(nextD.Dot(predT) + predT.Dot(nextD))
+             + nextL.Dot(pushT) + pushT.DotTranspose(nextL);
+      (* final trapezoidal integration in configuration at step N+1 *)
+      nexWp := curWp/(dArea*dArea) + (dTime/2)*(dCurP + dNexP);
+      nextT := hatF.Dot(currT.DotTranspose(hatF)) + (dTime/2)*(dCurT + dNexT)
+   end Integrate;
+
+begin
+end Isotropic.

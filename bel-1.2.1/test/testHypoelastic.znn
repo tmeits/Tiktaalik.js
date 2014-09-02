@@ -1,0 +1,2792 @@
+(* This example runs in two parts.  First, it runs the genetic algorithm's *)
+(* optimizer to determine the material parameters.  Second, it runs a      *)
+(* solver to create data files for plotting of the optimal fit.            *)
+
+module {public} Main;
+
+   import
+      System.Int32 as Int,
+      System.IO.StreamWriter as Writer,
+      Bel.IO.Log       as L,
+      Bel.IO.TextFiles as File,
+      Bel.DATA.Keys as Keys,
+      Bel.MF.Numbers  as N,
+      Bel.MF.Arrays   as A,
+      Bel.MF.Matrices as M,
+      Bel.MATH.Distributions as PD,
+      Bel.PF.Units    as U,
+      Bel.PF.Scalars  as S,
+      Bel.PF.Vectors2 as V,
+      Bel.PF.Tensors2 as T,
+      Bel.BI.Kinematics as K,
+      Bel.BI.Kinetics   as Ki,
+      Bel.TM.Hypoelastic.Isotropic as H,
+      Bel.GA.Genomes          as G,
+      Bel.GA.GeneticAlgorithm as GA,
+      Bel.GA.Statistics as GS,
+      Bel.Object as Object;
+
+   const
+      materialConstants = 2;
+
+   var {private}
+      area, factor, gravity, gr2kg : N.Number;
+      beta, mu : S.Scalar;
+      dataSets : integer;
+      F, dF, t : M.Matrix;
+
+   type {private}
+      BooleanArray = array * of boolean;
+      IntegerArray = array * of integer;
+
+   (* The following procedures are for the optimizer.  *)
+
+   procedure {private} Decimate (var decimateTo : A.Array;
+                                 var solveWithDecimatedDataOnly : boolean);
+   var
+      int : Int;
+      n : N.Number;
+      r : real{64};
+      s : string;
+   begin
+      decimateTo.Create(1);
+      s := "There are ";
+      int := dataSets;
+      s := s + int.ToString();
+      s := s + " data points in the data file.";
+      writeln(s);
+      write("   How many should the optimizer use?  ");
+      readln(s);
+      n := Int.Parse(s);
+      decimateTo[1] := n;
+      writeln;
+      s := "Should the numerical model be solved at all of the data points,";
+      writeln(s);
+      s := "   or only at those data points that have survived decimation?";
+      writeln(s);
+      write("   Enter 'a' for all, or 'd' for decimated:  ");
+      readln(s);
+      if (s = "d") or (s = "D") then
+         solveWithDecimatedDataOnly := true
+      else
+         solveWithDecimatedDataOnly := false
+      end;
+      writeln;
+      s := "The data are to be uniformly decimated to ";
+      r := n.Get();
+      int := integer(r);
+      s := s + int.ToString() + " data sets.";
+      writeln(s);
+      s := "The model will be solved at ";
+      if solveWithDecimatedDataOnly then
+         s := s + "only those data points surviving decimation."
+      else
+         s := s + "all of the experimental data points."
+      end;
+      writeln(s);
+      writeln;
+      write("Press 'Enter' if this is correct, or 'Ctrl-C' to terminate.");
+      readln
+   end Decimate;
+
+   procedure {private} SetUpOptimizer (var expCtlVar, expInputVar,
+                                           expOutputVar : M.Matrix;
+                                       var expEndsAtIndex : A.Array);
+   var
+      df, f, l : T.Tensor;
+      i : integer;
+      s : S.Scalar;
+   begin
+      f.SetUnits(U.Dimensionless);
+      df.SetUnits(U.Rate);
+      expCtlVar.Create(8, dataSets);
+      expInputVar.Create(2, dataSets);
+      expOutputVar.Create(2, dataSets);
+      expEndsAtIndex.Create(1);
+      for i := 1 to dataSets do
+         s.SetUnits(U.Dimensionless);
+         s.Set(F[1,i]);
+         f[1,1] := s;
+         s.Set(F[2,i]);
+         f[1,2] := s;
+         s.Set(F[3,i]);
+         f[2,1] := s;
+         s.Set(F[4,i]);
+         f[2,2] := s;
+         s.SetUnits(U.Rate);
+         s.Set(dF[1,i]);
+         df[1,1] := s;
+         s.Set(dF[2,i]);
+         df[1,2] := s;
+         s.Set(dF[3,i]);
+         df[2,1] := s;
+         s.Set(dF[4,i]);
+         df[2,2] := s;
+         l := K.L(f, df);
+         expCtlVar[1,i] := F[1,i];
+         expCtlVar[2,i] := F[2,i];
+         expCtlVar[3,i] := F[3,i];
+         expCtlVar[4,i] := F[4,i];
+         s := l[1,1];
+         expCtlVar[5,i] := s.Get();
+         s := l[1,2];
+         expCtlVar[6,i] := s.Get();
+         s := l[2,1];
+         expCtlVar[7,i] := s.Get();
+         s := l[2,2];
+         expCtlVar[8,i] := s.Get();
+         expInputVar[1,i] := F[1,i];
+         expInputVar[2,i] := F[4,i];
+         expOutputVar[1,i] := t[1,i];
+         expOutputVar[2,i] := t[2,i]
+      end;
+      expEndsAtIndex[1] := dataSets
+   end SetUpOptimizer;
+
+   procedure {private} ReadInParams (i : integer; var vPar : BooleanArray;
+                                     var fPar, aPar, minPar, maxPar : A.Array);
+   var
+      s : string;
+      x : N.Number;
+   begin
+      s := " ";
+      write("   Is this parameter to be allowed to vary? (Y or N) ");
+      readln(s);
+      if (s = "y") or (s = "Y") then
+         vPar[i] := true;
+         write("      What is your best guess?  ");
+         readln(s);
+         x.Parse(s);
+         aPar[i] := x;
+         write("      What is the lower bound?  ");
+         readln(s);
+         x.Parse(s);
+         minPar[i] := x;
+         write("      What is the upper bound?  ");
+         readln(s);
+         x.Parse(s);
+         maxPar[i] := x;
+         fPar[i] := 0
+      else
+         vPar[i] := false;
+         write("      What is its value to be?  ");
+         readln(s);
+         x.Parse(s);
+         fPar[i] := x;
+         aPar[i] := 0;
+         minPar[i] := 0;
+         maxPar[i] := 0
+      end
+   end ReadInParams;
+
+   procedure {private} WriteParams (i : integer; vPar : BooleanArray;
+                                    fPar, aPar, minPar, maxPar : A.Array);
+   begin
+      if vPar[i] then
+         writeln("  initial guess:  " + aPar[i].ToString(5));
+         writeln("  lower bound:    " + minPar[i].ToString(5));
+         writeln("  upper bound:    " + maxPar[i].ToString(5))
+      else
+         writeln("  assigned value: " + fPar[i].ToString(5))
+      end
+   end WriteParams;
+
+   procedure {private} AssignParameters (var varPar : BooleanArray; var fixPar,
+                                         guess, minPar, maxPar : A.Array);
+   var
+      alienParam, fixParam, maxParam, minParam : A.Array;
+      i, nf, nv : integer;
+      x : N.Number;
+   begin
+      varPar := new BooleanArray(materialConstants+1);
+      varPar[0] := false;
+      fixParam.Create(materialConstants);
+      alienParam.Create(materialConstants);
+      minParam.Create(materialConstants);
+      maxParam.Create(materialConstants);
+      writeln;
+      writeln("Input values for parameter   'mu'  - shear modulus (Pa):");
+      ReadInParams(1, varPar, fixParam, alienParam, minParam, maxParam);
+      writeln("Input values for parameter 'beta'  - Fung's coefficient:");
+      ReadInParams(2, varPar, fixParam, alienParam, minParam, maxParam);
+      for i := 1 to materialConstants do
+         if varPar[i] then
+            if minParam[i] > maxParam[i] then
+               x := maxParam[i];
+               maxParam[i] := minParam[i];
+               minParam[i] := x
+            end;
+            if alienParam[i] < minParam[i] then
+               alienParam[i] := minParam[i]
+            end;
+            if alienParam[i] > maxParam[i] then
+               alienParam[i] := maxParam[i]
+            end
+         end
+      end;
+      writeln;
+      writeln("The parameters you have input for  'mu'   are:");
+      WriteParams(1, varPar, fixParam, alienParam, minParam, maxParam);
+      writeln("The parameters you have input for 'beta' are:");
+      WriteParams(2, varPar, fixParam, alienParam, minParam, maxParam);
+      writeln;
+      write("Press 'Enter' if this is correct, or 'Ctrl-C' to terminate.");
+      readln;
+      (* rewrite these arrays into arrays suitable to send to the GA *)
+      nf := 0;
+      nv := 0;
+      for i := 1 to materialConstants do
+         if varPar[i] then
+            inc(nv)
+         else
+            inc(nf)
+         end
+      end;
+      fixPar.Create(nf);
+      guess.Create(nv);
+      minPar.Create(nv);
+      maxPar.Create(nv);
+      nf := 0;
+      nv := 0;
+      for i := 1 to materialConstants do
+         if varPar[i] then
+            inc(nv);
+            guess[nv]  := alienParam[i];
+            minPar[nv] := minParam[i];
+            maxPar[nv] := maxParam[i]
+         else
+            inc(nf);
+            fixPar[nf] := fixParam[i]
+         end
+      end;
+      alienParam.Nullify;
+      minParam.Nullify;
+      maxParam.Nullify;
+      fixParam.Nullify
+   end AssignParameters;
+
+   procedure {private} OptimizerSettings (var method : GS.LeastSquares;
+                                          var schemata, sigFig : integer;
+                                          var probXover, probMutate,
+                                              probImmigrant : N.Number;
+                                          var certainty : PD.Certainty;
+                                          var chromosome : G.ChromosomeType);
+   var
+      c, ls, p, s : string;
+      i : Int;
+      x : N.Number;
+   begin
+      s := " ";
+      writeln;
+      writeln("What method of least squares do you want to use?");
+      write("   linear, generalized or non-linear (l, g, n):   ");
+      readln(s);
+      if s = "g" then
+         ls := "g";
+         method := GS.LeastSquares.generalized
+      elsif s = "n" then
+         ls := "n";
+         method := GS.LeastSquares.nonlinear
+      else
+         ls := "l";
+         method := GS.LeastSquares.linear
+      end;
+      writeln("What length of schemata are to be successfully searched?");
+      write("   Typical values are between [2, 8].  ");
+      readln(s);
+      i := Int.Parse(s);
+      schemata := i;
+      if schemata < 2 then
+         schemata := 2
+      end;
+      if schemata > 10 then
+         schemata := 10
+      end;
+      writeln("How many significant figures of accuracy do you want?");
+      write("   Typical values are between [2, 8].  ");
+      readln(s);
+      i := Int.Parse(s);
+      sigFig := i;
+      if sigFig < 1 then
+         sigFig := 1
+      end;
+      if sigFig > 15 then
+         sigFig := 15
+      end;
+      writeln(
+         "What certainty do you want to use for the confidence intervals?");
+      write("   Choose: '90', '95', '97.5', '99', or '99.5':  ");
+      readln(s);
+      if s = "90" then
+         certainty := PD.Certainty.ninety;
+         p := "90%"
+      elsif s = "97.5" then
+         certainty := PD.Certainty.ninetySevenPointFive;
+         p := "97.5%"
+      elsif s = "99" then
+         certainty := PD.Certainty.ninetyNine;
+         p := "99%"
+      elsif s = "99.5" then
+         certainty := PD.Certainty.ninetyNinePointFive;
+         p := "99.5%"
+      else (* 95% is the default *)
+         certainty := PD.Certainty.ninetyFive;
+         p := "95%"
+      end;
+      writeln("What is the probability of crossover per reproduction cycle?");
+      write("   Typical values are between [0.5, 0.8].       ");
+      readln(s);
+      x.Parse(s);
+      if x < N.Epsilon then
+         x := N.Epsilon
+      end;
+      if x > 1 then
+         x := 1
+      end;
+      probXover := x;
+      writeln("What is the probability that a single gene will mutate?");
+      write("   Typical values are between [0.001, 0.05].    ");
+      readln(s);
+      x.Parse(s);
+      if x < N.Epsilon then
+         x := N.Epsilon
+      end;
+      if x > 1 then
+         x := 1
+      end;
+      probMutate := x;
+      writeln("What is the probability of an immigration into the population?");
+      write("   Typical values are between [0.001, 0.05].    ");
+      readln(s);
+      x.Parse(s);
+      if x < N.Epsilon then
+         x := N.Epsilon
+      end;
+      if x > 1 then
+         x := 1
+      end;
+      probImmigrant := x;
+      writeln("Haploid is a single strand.  Diploid is a double strand.");
+      write("   Which chromosome type do you want? (h or d)  ");
+      readln(s);
+      if (s = "h") or (s = "H") then
+         chromosome := G.ChromosomeType.haploid;
+         c := "haploid"
+      else
+         chromosome := G.ChromosomeType.diploid;
+         c := "diploid"
+      end;
+      writeln;
+      writeln("You have assigned the following ancillary values:");
+      write("   least-squares method to be used:      ");
+      if ls = "l" then
+         writeln("linear")
+      elsif ls = "g" then
+         writeln("generalized")
+      else
+         writeln("non-linear")
+      end;
+      write("   length of schemata to be searched: ");
+      i := schemata;
+      writeln(i.ToString());
+      write("   the number of significant figures: ");
+      i := sigFig;
+      writeln(i.ToString());
+      writeln("   certainty for confidence intervals:   " + p);
+      write("   probability of splitting the genome: ");
+      writeln(probXover.ToString(5));
+      write("   probability of a gene mutating:      ");
+      writeln(probMutate.ToString(5));
+      write("   probability of an immigration:       ");
+      writeln(probImmigrant.ToString(5));
+      writeln("   the kind of chromosome selected:      " + c);
+      writeln;
+      write("Press 'Enter' to begin optimization, or 'Ctrl-C' to terminate");
+      readln
+   end OptimizerSettings;
+
+   procedure {public} OptimizerModel (parameters : A.Array;
+                                      controlVariables : M.Matrix;
+                                      endsAt : A.Array) : M.Matrix;
+   var
+      beginsAt, e, exps, n : integer;
+      cF, cL, cT, hatF, nF, nL, nT : T.Tensor;
+      cp, dt, np, s, t0 : S.Scalar;
+      finishesAt : IntegerArray;
+      r : real{64};
+      responseVariables : M.Matrix;
+      tv : V.Vector;
+      x : N.Number;
+   begin
+      exps := endsAt.Length();
+      finishesAt := new IntegerArray(exps+1);
+      finishesAt[0] := 0;
+      for e := 1 to exps do
+         r := endsAt[e].Get();
+         finishesAt[e] := integer(r)
+      end;
+      responseVariables.Create(2, controlVariables.Columns());
+      (* assign the parameters *)
+      mu.Set(parameters[1]);
+      mu.SetUnits(U.Stress);
+      beta.Set(parameters[2]);
+      beta.SetUnits(U.Dimensionless);
+      (* assign units to the physical fields *)
+      x := 1;
+      dt.Set(x);
+      dt.SetUnits(U.Time);
+      nF.SetUnits(U.Dimensionless);
+      nL.SetUnits(U.Rate);
+      nT.SetUnits(U.Stress);
+      x := 0;
+      t0.Set(x);
+      t0.SetUnits(U.Stress);
+      beginsAt := 1;
+      for e := 1 to exps do
+         s.SetUnits(U.Dimensionless);
+         s.Set(controlVariables[1,beginsAt]);
+         nF[1,1] := s;
+         s.Set(controlVariables[2,beginsAt]);
+         nF[1,2] := s;
+         s.Set(controlVariables[3,beginsAt]);
+         nF[2,1] := s;
+         s.Set(controlVariables[4,beginsAt]);
+         nF[2,2] := s;
+         s.SetUnits(U.Rate);
+         s.Set(controlVariables[5,beginsAt]);
+         nL[1,1] := s;
+         s.Set(controlVariables[6,beginsAt]);
+         nL[1,2] := s;
+         s.Set(controlVariables[7,beginsAt]);
+         nL[2,1] := s;
+         s.Set(controlVariables[8,beginsAt]);
+         nL[2,2] := s;
+         nT[1,1] := t0;
+         nT[1,2] := t0;
+         nT[2,1] := t0;
+         nT[2,2] := t0;
+         np := t0;
+         x := 0;
+         responseVariables[1,beginsAt] := x;
+         responseVariables[2,beginsAt] := x;
+         for n := beginsAt+1 to finishesAt[e] do
+            cp := np;
+            cF := nF;
+            cL := nL;
+            cT := nT;
+            s.SetUnits(U.Dimensionless);
+            s.Set(controlVariables[1,n]);
+            nF[1,1] := s;
+            s.Set(controlVariables[2,n]);
+            nF[1,2] := s;
+            s.Set(controlVariables[3,n]);
+            nF[2,1] := s;
+            s.Set(controlVariables[4,n]);
+            nF[2,2] := s;
+            s.SetUnits(U.Rate);
+            s.Set(controlVariables[5,n]);
+            nL[1,1] := s;
+            s.Set(controlVariables[6,n]);
+            nL[1,2] := s;
+            s.Set(controlVariables[7,n]);
+            nL[2,1] := s;
+            s.Set(controlVariables[8,n]);
+            nL[2,2] := s;
+            hatF := K.HatF(cF, nF);
+            H.Integrate(mu, beta, dt, cp, cT, hatF, cL, nL, np, nT);
+            tv := Ki.PtoTraction(nF, Ki.TtoP(nF, nT));
+            s := tv[1];
+            responseVariables[1,n] := s.Get();
+            s := tv[2];
+            responseVariables[2,n] := s.Get()
+         end;
+         beginsAt := finishesAt[e] + 1
+      end;
+      return responseVariables
+   end OptimizerModel;
+
+   procedure {public} Optimize;
+   var
+      alienPar, decimateTo, expEndsAt, fixPar, maxPar, minPar : A.Array;
+      certainty : PD.Certainty;
+      chromosome : G.ChromosomeType;
+      expCtlVar, expInputVar, expOutputVar : M.Matrix;
+      fileName : string;
+      method : GS.LeastSquares;
+      probImmigrant, probMutate, probXover : N.Number;
+      schemata, sigFig : integer;
+      solveWithDecimatedDataOnly : boolean;
+      varPar : BooleanArray;
+   begin
+      Decimate(decimateTo, solveWithDecimatedDataOnly);
+      SetUpOptimizer(expCtlVar, expInputVar, expOutputVar, expEndsAt);
+      AssignParameters(varPar, fixPar, alienPar, minPar, maxPar);
+      OptimizerSettings(method, schemata, sigFig, probXover, probMutate,
+                        probImmigrant, certainty, chromosome);
+      fileName := "testOptimize";
+      writeln("The optimizer is running...");
+      writeln;
+      GA.Optimize(fileName, expCtlVar, expInputVar, expOutputVar,
+                  expEndsAt, decimateTo, method, OptimizerModel,
+                  solveWithDecimatedDataOnly, fixPar, alienPar,
+                  minPar, maxPar, varPar, schemata, sigFig, certainty,
+                  probXover, probMutate, probImmigrant, chromosome)
+   end Optimize;
+
+
+   (* The following procedures are for the solver. *)
+
+
+   procedure {private} ImportExperimentalData;
+   var
+      data : H.Datum;
+      dfT, fT : T.Tensor;
+      i : integer;
+      key : Keys.Key;
+      n : N.Number;
+      obj : object{Object};
+      s, seconds : S.Scalar;
+      success : boolean;
+      tV : V.Vector;
+   begin
+      fT.SetUnits(U.Dimensionless);
+      dfT.SetUnits(U.Rate);
+      seconds.SetUnits(U.Time);
+      tV.SetUnits(U.Stress);
+      H.InitializeDataTree;
+      H.BuildDataTree(1, dataSets-1);
+      for i := 1 to dataSets do
+         (* extract a datum node from the data tree     *)
+         (* the intial state associates with key = 1000 *)
+         key := 999 + i;
+         H.dataTree.Find(key, success);
+         if ~success then
+            L.ErrorMessage(523,20, "ImportExperimentalData")
+         end;
+         obj := H.dataTree.GetData();
+         data := H.Datum(obj);
+         (* assign time - the actual times are not known *)
+         (*               assume uniform time increments *)
+         n := i;
+         seconds.Set(n);
+         data.t := seconds;
+         (* assign the deformation gradient *)
+         s.SetUnits(U.Dimensionless);
+         s.Set(F[1,i]);
+         fT[1,1] := s;
+         s.Set(F[2,i]);
+         fT[1,2] := s;
+         s.Set(F[3,i]);
+         fT[2,1] := s;
+         s.Set(F[4,i]);
+         fT[2,2] := s;
+         data.F := fT;
+         (* assign the velocity gradient *)
+         s.SetUnits(U.Rate);
+         s.Set(dF[1,i]);
+         dfT[1,1] := s;
+         s.Set(dF[2,i]);
+         dfT[1,2] := s;
+         s.Set(dF[3,i]);
+         dfT[2,1] := s;
+         s.Set(dF[4,i]);
+         dfT[2,2] := s;
+         data.L := K.L(fT, dfT);
+         (* assign the first Piola-Kirchhoff stress *)
+         s.SetUnits(U.Stress);
+         s.Set(t[1,i]);
+         tV[1] := s;
+         s.Set(t[2,i]);
+         tV[2] := s;
+         data.P := Ki.TractionToP(fT, tV);
+         (* update the data tree *)
+         H.dataTree.Update(data, key, success);
+         if ~success then
+            L.ErrorMessage(521,20, "ImportExperimentalData")
+         end
+      end
+   end ImportExperimentalData;
+
+   procedure {private} ReadInParameters;
+   var
+      s : string;
+      x : N.Number;
+   begin
+      s := " ";
+      write("Input value for parameter 'mu'   - shear modulus (in Pa): ");
+      readln(s);
+      x.Parse(s);
+      if x < 1 then
+         x := 1
+      end;
+      mu.Set(x);
+      mu.SetUnits(U.Stress);
+      write("Input value for parameter 'beta' - Fung's coefficient   : ");
+      readln(s);
+      x.Parse(s);
+      beta.Set(x);
+      beta.SetUnits(U.Dimensionless);
+      writeln;
+      writeln("You have input the following parameters:");
+      writeln("  mu:   " + mu.ToString(4));
+      writeln("  beta: " + beta.ToString(4));
+      writeln;
+      write("Press 'Enter' if this is correct, or 'Ctrl-C' to terminate.");
+      readln;
+      writeln
+   end ReadInParameters;
+
+   procedure {private} AssignInitialConditions;
+   var
+      data : H.Datum;
+      key : Keys.Key;
+      obj : object{Object};
+      success : boolean;
+      zeroStrain, zeroStress : S.Scalar;
+      x  : N.Number;
+   begin
+      x := 0;
+      zeroStrain.Set(x);
+      zeroStress.Set(x);
+      zeroStrain.SetUnits(U.Strain);
+      zeroStress.SetUnits(U.Stress);
+      (* extract a data node from the data tree *)
+      key := 1000;
+      H.dataTree.Find(key, success);
+      if ~success then
+         L.ErrorMessage(523,20, "AssignInitialConditions")
+      end;
+      obj := H.dataTree.GetData();
+      data := H.Datum(obj);
+      (* assign our initial conditions *)
+      data.wp := zeroStress;
+      data.E[1,1] := zeroStrain;
+      data.E[1,2] := zeroStrain;
+      data.E[2,1] := zeroStrain;
+      data.E[2,2] := zeroStrain;
+      data.T[1,1] := zeroStress;
+      data.T[1,2] := zeroStress;
+      data.T[2,1] := zeroStress;
+      data.T[2,2] := zeroStress;
+      H.dataTree.Update(data, key, success);
+      if ~success then
+         L.ErrorMessage(521,20, "AssignInitailConditions")
+      end
+   end AssignInitialConditions;
+
+   procedure {private} WriteExperimentalData;
+   var
+      data : H.Datum;
+      e, t : S.Scalar;
+      file1, file2, file3, s : string;
+      i : integer;
+      key : Keys.Key;
+      n : N.Number;
+      obj : object{Object};
+      success : boolean;
+      Texp : T.Tensor;
+      v : V.Vector;
+      w1, w2, w3 : Writer;
+   begin
+      (* Write out individual stress/strain files for graphic display *)
+      e.SetUnits(U.Strain);   (* strain *)
+      t.SetUnits(U.Stress);   (* stress *)
+      file1 := "testExpHypo11";
+      file2 := "testExpHypo12";
+      file3 := "testExpHypo22";
+      w1 := File.OpenWriter(file1);
+      s := "#    E11          T11 (Pa)";
+      w1.WriteLine(s);
+      w1.Flush;
+      w2 := File.OpenWriter(file2);
+      s := "#    E12          T12 (Pa)";
+      w2.WriteLine(s);
+      w2.Flush;
+      w3 := File.OpenWriter(file3);
+      s := "#    E22          T22 (Pa)";
+      w3.WriteLine(s);
+      w3.Flush;
+      (* Grace cannot import 64-bit reals -> export 32-bit reals to file *)
+      for i := 1 to dataSets do
+         key.Initialize;
+         key := 999 + i;
+         H.dataTree.Find(key, success);
+         if ~success then
+            L.ErrorMessage(523,20, "WriteExperimentalData")
+         end;
+         obj := H.dataTree.GetData();
+         data := H.Datum(obj);
+         Texp := Ki.PtoT(data.F, data.P);
+         e := data.E[1,1];
+         t := Texp[1,1];
+         n := e.Get();
+         s := n.ToString(5);
+         s := s + " ";
+         n := t.Get();
+         s := s + n.ToString(5);
+         w1.WriteLine(s);
+         w1.Flush;
+         e := data.E[1,2];
+         t := Texp[1,2];
+         n := e.Get();
+         s := n.ToString(5);
+         s := s + " ";
+         n := t.Get();
+         s := s + n.ToString(5);
+         w2.WriteLine(s);
+         w2.Flush;
+         e := data.E[2,2];
+         t := Texp[2,2];
+         n := e.Get();
+         s := n.ToString(5);
+         s := s + " ";
+         n := t.Get();
+         s := s + n.ToString(5);
+         w3.WriteLine(s);
+         w3.Flush
+      end;
+      (* Grace requires a blank line at the end of the file *)
+      w1.WriteLine(" ");
+      File.CloseWriter(w1);
+      w2.WriteLine(" ");
+      File.CloseWriter(w2);
+      w3.WriteLine(" ");
+      File.CloseWriter(w3);
+      (* Write out the actual control and response variables to file *)
+      file1 := "testExpHypo1";
+      file2 := "testExpHypo2";
+      w1 := File.OpenWriter(file1);
+      s := "#  lambda1      sigma1 (Pa)";
+      w1.WriteLine(s);
+      w1.Flush;
+      w2 := File.OpenWriter(file2);
+      s := "#  lambda2      sigma2 (Pa)";
+      w2.WriteLine(s);
+      w2.Flush;
+      for i := 1 to dataSets do
+         key.Initialize;
+         key := 999 + i;
+         H.dataTree.Find(key, success);
+         if ~success then
+            L.ErrorMessage(523,20, "WriteExperimentalData")
+         end;
+         obj := H.dataTree.GetData();
+         data := H.Datum(obj);
+         v := Ki.PtoTraction(data.F, data.P);
+         e := data.F[1,1];
+         t := v[1];
+         n := e.Get();
+         s := n.ToString(5);
+         s := s + " ";
+         n := t.Get();
+         s := s + n.ToString(5);
+         w1.WriteLine(s);
+         w1.Flush;
+         e := data.F[2,2];
+         t := v[2];
+         n := e.Get();
+         s := n.ToString(5);
+         s := s + " ";
+         n := t.Get();
+         s := s + n.ToString(5);
+         w2.WriteLine(s);
+         w2.Flush
+      end;
+      w1.WriteLine(" ");
+      File.CloseWriter(w1);
+      w2.WriteLine(" ");
+      File.CloseWriter(w2);
+      (* Write out a file that contains all of the stress/strain components. *)
+      file1 := "testExpHypoelastic";
+      w1 := File.OpenWriter(file1);
+      s := "#    E11            E12            E22          T11 (Pa)";
+      s := s + "       T12 (Pa)       T22 (Pa)";
+      w1.WriteLine(s);
+      w1.Flush;
+      for i := 1 to dataSets do
+         key.Initialize;
+         key := 999 + i;
+         H.dataTree.Find(key, success);
+         if ~success then
+            L.ErrorMessage(523,20, "WriteExperimentalData")
+         end;
+         obj := H.dataTree.GetData();
+         data := H.Datum(obj);
+         Texp := Ki.PtoT(data.F, data.P);
+         e := data.E[1,1];
+         n := e.Get();
+         s := n.ToString(5);
+         e := data.E[1,2];
+         n := e.Get();
+         s := s + " ";
+         s := s + n.ToString(5);
+         e := data.E[2,2];
+         n := e.Get();
+         s := s + " ";
+         s := s + n.ToString(5);
+         t := Texp[1,1];
+         n := t.Get();
+         s := s + " ";
+         s := s + n.ToString(5);
+         t := Texp[1,2];
+         n := t.Get();
+         s := s + " ";
+         s := s + n.ToString(5);
+         t := Texp[2,2];
+         n := t.Get();
+         s := s + " ";
+         s := s + n.ToString(5);
+         w1.WriteLine(s);
+         w1.Flush
+      end;
+      (* Grace requires a blank line at the end of the file *)
+      w1.WriteLine(" ");
+      File.CloseWriter(w1)
+   end WriteExperimentalData;
+
+   procedure {private} WriteTheoreticalData;
+   var
+      data : H.Datum;
+      e, t : S.Scalar;
+      file1, file2, file3, s : string;
+      i : integer;
+      key : Keys.Key;
+      n : N.Number;
+      obj : object{Object};
+      success : boolean;
+      v : V.Vector;
+      w1, w2, w3 : Writer;
+   begin
+      (* Write out individual stress/strain files for graphic display *)
+      e.SetUnits(U.Strain);   (* for gathering strain components *)
+      t.SetUnits(U.Stress);   (* for gathering stress components *)
+      file1 := "testThyHypo11";
+      file2 := "testThyHypo12";
+      file3 := "testThyHypo22";
+      w1 := File.OpenWriter(file1);
+      s := "#    E11          T11 (Pa)";
+      w1.WriteLine(s);
+      w1.Flush;
+      w2 := File.OpenWriter(file2);
+      s := "#    E12          T12 (Pa)";
+      w2.WriteLine(s);
+      w2.Flush;
+      w3 := File.OpenWriter(file3);
+      s := "#    E22          T22 (Pa)";
+      w3.WriteLine(s);
+      w3.Flush;
+      (* Grace cannot import 64-bit reals -> export 32-bit reals to file *)
+      for i := 1 to dataSets do
+         key.Initialize;
+         key := 999 + i;
+         H.dataTree.Find(key, success);
+         if ~success then
+            L.ErrorMessage(523,20, "WriteTheoreticalData")
+         end;
+         obj := H.dataTree.GetData();
+         data := H.Datum(obj);
+         e := data.E[1,1];
+         t := data.T[1,1];
+         n := e.Get();
+         s := n.ToString(5);
+         s := s + " ";
+         n := t.Get();
+         s := s + n.ToString(5);
+         w1.WriteLine(s);
+         w1.Flush;
+         e := data.E[1,2];
+         t := data.T[1,2];
+         n := e.Get();
+         s := n.ToString(5);
+         s := s + " ";
+         n := t.Get();
+         s := s + n.ToString(5);
+         w2.WriteLine(s);
+         w2.Flush;
+         e := data.E[2,2];
+         t := data.T[2,2];
+         n := e.Get();
+         s := n.ToString(5);
+         s := s + " ";
+         n := t.Get();
+         s := s + n.ToString(5);
+         w3.WriteLine(s);
+         w3.Flush
+      end;
+      (* Grace requires a blank line at the end of the file. *)
+      w1.WriteLine(" ");
+      File.CloseWriter(w1);
+      w2.WriteLine(" ");
+      File.CloseWriter(w2);
+      w3.WriteLine(" ");
+      File.CloseWriter(w3);
+      (* Write out the actual control and response variables to file *)
+      file1 := "testThyHypo1";
+      file2 := "testThyHypo2";
+      w1 := File.OpenWriter(file1);
+      s := "#  lambda1      sigma1 (Pa)";
+      w1.WriteLine(s);
+      w1.Flush;
+      w2 := File.OpenWriter(file2);
+      s := "#  lambda2      sigma2 (Pa)";
+      w2.WriteLine(s);
+      w2.Flush;
+      for i := 1 to dataSets do
+         key.Initialize;
+         key := 999 + i;
+         H.dataTree.Find(key, success);
+         if ~success then
+            L.ErrorMessage(523,20, "WriteTheoreticalData")
+         end;
+         obj := H.dataTree.GetData();
+         data := H.Datum(obj);
+         v := Ki.PtoTraction(data.F, Ki.TtoP(data.F, data.T));
+         e := data.F[1,1];
+         t := v[1];
+         n := e.Get();
+         s := n.ToString(5);
+         s := s + " ";
+         n := t.Get();
+         s := s + n.ToString(5);
+         w1.WriteLine(s);
+         w1.Flush;
+         e := data.F[2,2];
+         t := v[2];
+         n := e.Get();
+         s := n.ToString(5);
+         s := s + " ";
+         n := t.Get();
+         s := s + n.ToString(5);
+         w2.WriteLine(s);
+         w2.Flush
+      end;
+      w1.WriteLine(" ");
+      File.CloseWriter(w1);
+      w2.WriteLine(" ");
+      File.CloseWriter(w2);
+      (* Write out a file that contains all of the stress/strain components. *)
+      file1 := "testThyHypoelastic";
+      w1 := File.OpenWriter(file1);
+      s := "# The model parameters were set at the following values:";
+      w1.WriteLine(s);
+      w1.Flush;
+      s := "#";
+      w1.WriteLine(s);
+      w1.Flush;
+      s := "#   mu:   " + mu.ToString(5);
+      w1.WriteLine(s);
+      w1.Flush;
+      s := "#   beta: " + beta.ToString(5);
+      w1.WriteLine(s);
+      w1.Flush;
+      s := "#";
+      w1.WriteLine(s);
+      w1.Flush;
+      s := "# The strains are controls, the stresses are responses.";
+      w1.WriteLine(s);
+      w1.Flush;
+      s := "#";
+      w1.WriteLine(s);
+      w1.Flush;
+      s := "#    E11            E12            E22          T11 (Pa)";
+      s := s + "       T12 (Pa)       T22 (Pa)";
+      w1.WriteLine(s);
+      w1.Flush;
+      for i := 1 to dataSets do
+         key.Initialize;
+         key := 999 + i;
+         H.dataTree.Find(key, success);
+         if ~success then
+            L.ErrorMessage(523,20, "WriteTheoreticalData")
+         end;
+         obj := H.dataTree.GetData();
+         data := H.Datum(obj);
+         e := data.E[1,1];
+         n := e.Get();
+         s := n.ToString(5);
+         e := data.E[1,2];
+         n := e.Get();
+         s := s + " ";
+         s := s + n.ToString(5);
+         e := data.E[2,2];
+         n := e.Get();
+         s := s + " ";
+         s := s + n.ToString(5);
+         t := data.T[1,1];
+         n := t.Get();
+         s := s + " ";
+         s := s + n.ToString(5);
+         t := data.T[1,2];
+         n := t.Get();
+         s := s + " ";
+         s := s + n.ToString(5);
+         t := data.T[2,2];
+         n := t.Get();
+         s := s + " ";
+         s := s + n.ToString(5);
+         w1.WriteLine(s);
+         w1.Flush
+      end;
+      (* Grace requires a blank line at the end of the file. *)
+      w1.WriteLine(" ");
+      File.CloseWriter(w1)
+   end WriteTheoreticalData;
+
+   procedure {public} Solve;
+   begin
+      ImportExperimentalData;
+      ReadInParameters;
+      AssignInitialConditions;
+      H.Solve(mu, beta);
+      WriteExperimentalData;
+      WriteTheoreticalData
+   end Solve;
+
+begin
+
+   (* Normally the experimental data would be read in from a file.  Here it *)
+   (* is incorporated into the executable file so as to keep the test suite *)
+   (* simple for users to study from, and so the data won't get lost. These *)
+   (* data are from an equi-biaxial experiment done on a bovine tissue.     *)
+
+   dataSets := 131;
+
+   (* Enter the experimental tractions: units are in Pascals, Pa = kg/m.s^2 *)
+
+   area    := 0.0000125;   (* in m^2 *)
+   gr2kg   := 0.001;       (* numeric values below are in grams mass *)
+   gravity := 9.81;
+   factor  := gr2kg*gravity/area;
+
+   t.Create(2, dataSets);
+
+   t[1,1] := 0;
+   t[2,1] := 0;
+
+   t[1,2] := 1.156056000000000E+0 * factor;
+   t[2,2] := 3.008910000000000E-1 * factor;
+
+   t[1,3] := 1.029365000000000E+0 * factor;
+   t[2,3] := 2.850550000000000E-1 * factor;
+
+   t[1,4] := 1.425275000000000E+0 * factor;
+   t[2,4] := 9.026740000000000E-1 * factor;
+
+   t[1,5] := 2.201257000000000E+0 * factor;
+   t[2,5] := 1.995385000000000E+0 * factor;
+
+   t[1,6] := 3.246459000000000E+0 * factor;
+   t[2,6] := 3.167277000000000E+0 * factor;
+
+   t[1,7] := 4.940952000000000E+0 * factor;
+   t[2,7] := 4.370842000000000E+0 * factor;
+
+   t[1,8] := 6.730463999999999E+0 * factor;
+   t[2,8] := 5.780280999999999E+0 * factor;
+
+   t[1,9] := 8.820867000000000E+0 * factor;
+   t[2,9] := 7.458937000000000E+0 * factor;
+
+   t[1,10] := 1.086376000000000E+1 * factor;
+   t[2,10] := 9.185103000000000E+0 * factor;
+
+   t[1,11] := 1.297000000000000E+1 * factor;
+   t[2,11] := 1.073707000000000E+1 * factor;
+
+   t[1,12] := 1.563051200000000E+1 * factor;
+   t[2,12] := 1.284330800000000E+1 * factor;
+
+   t[1,13] := 1.832269700000000E+1 * factor;
+   t[2,13] := 1.496538400000000E+1 * factor;
+
+   t[1,14] := 2.122075700000000E+1 * factor;
+   t[2,14] := 1.722998800000000E+1 * factor;
+
+   t[1,15] := 2.462558000000000E+1 * factor;
+   t[2,15] := 1.974797200000000E+1 * factor;
+
+   t[1,16] := 2.776118500000000E+1 * factor;
+   t[2,16] := 2.228179400000000E+1 * factor;
+
+   t[1,17] := 3.135604300000000E+1 * factor;
+   t[2,17] := 2.492647000000000E+1 * factor;
+
+   t[1,18] := 3.529930100000000E+1 * factor;
+   t[2,18] := 2.769783800000000E+1 * factor;
+
+   t[1,19] := 3.887832600000000E+1 * factor;
+   t[2,19] := 3.097597100000000E+1 * factor;
+
+   t[1,20] := 4.283742100000000E+1 * factor;
+   t[2,20] := 3.379484600000000E+1 * factor;
+
+   t[1,21] := 4.747748200000000E+1 * factor;
+   t[2,21] := 3.750056100000000E+1 * factor;
+
+   t[1,22] := 5.194334400000000E+1 * factor;
+   t[2,22] := 4.128545800000000E+1 * factor;
+
+   t[1,23] := 5.691597000000000E+1 * factor;
+   t[2,23] := 4.478529700000000E+1 * factor;
+
+   t[1,24] := 6.230033900000000E+1 * factor;
+   t[2,24] := 4.937785000000000E+1 * factor;
+
+   t[1,25] := 6.793809500000001E+1 * factor;
+   t[2,25] := 5.363784000000000E+1 * factor;
+
+   t[1,26] := 7.349666600000000E+1 * factor;
+   t[2,26] := 5.799284400000000E+1 * factor;
+
+   t[1,27] := 7.962534300000000E+1 * factor;
+   t[2,27] := 6.331386600000000E+1 * factor;
+
+   t[1,28] := 8.531060800000000E+1 * factor;
+   t[2,28] := 6.839734600000000E+1 * factor;
+
+   t[1,29] := 9.105921900000000E+1 * factor;
+   t[2,29] := 7.322744800000000E+1 * factor;
+
+   t[1,30] := 9.745712300000000E+1 * factor;
+   t[2,30] := 7.943531000000000E+1 * factor;
+
+   t[1,31] := 1.036174700000000E+2 * factor;
+   t[2,31] := 8.531060800000000E+1 * factor;
+
+   t[1,32] := 1.099203490000000E+2 * factor;
+   t[2,32] := 9.121758300000000E+1 * factor;
+
+   t[1,33] := 1.168883590000000E+2 * factor;
+   t[2,33] := 9.777384900000000E+1 * factor;
+
+   t[1,34] := 1.242839510000000E+2 * factor;
+   t[2,34] := 1.044251330000000E+2 * factor;
+
+   t[1,35] := 1.315370180000000E+2 * factor;
+   t[2,35] := 1.110447390000000E+2 * factor;
+
+   t[1,36] := 1.396135710000000E+2 * factor;
+   t[2,36] := 1.181394350000000E+2 * factor;
+
+   t[1,37] := 1.484977870000000E+2 * factor;
+   t[2,37] := 1.259626160000000E+2 * factor;
+
+   t[1,38] := 1.564793240000000E+2 * factor;
+   t[2,38] := 1.329622960000000E+2 * factor;
+
+   t[1,39] := 1.646350560000000E+2 * factor;
+   t[2,39] := 1.408488160000000E+2 * factor;
+
+   t[1,40] := 1.735351260000000E+2 * factor;
+   t[2,40] := 1.494004670000000E+2 * factor;
+
+   t[1,41] := 1.815799870000000E+2 * factor;
+   t[2,41] := 1.566060180000000E+2 * factor;
+
+   t[1,42] := 1.900366210000000E+2 * factor;
+   t[2,42] := 1.653952180000000E+2 * factor;
+
+   t[1,43] := 1.985882720000000E+2 * factor;
+   t[2,43] := 1.741844020000000E+2 * factor;
+
+   t[1,44] := 2.068390200000000E+2 * factor;
+   t[2,44] := 1.816908570000000E+2 * factor;
+
+   t[1,45] := 2.164675600000000E+2 * factor;
+   t[2,45] := 1.911610110000000E+2 * factor;
+
+   t[1,46] := 2.260644070000000E+2 * factor;
+   t[2,46] := 2.001402440000000E+2 * factor;
+
+   t[1,47] := 2.351069790000000E+2 * factor;
+   t[2,47] := 2.082167970000000E+2 * factor;
+
+   t[1,48] := 2.461766050000000E+2 * factor;
+   t[2,48] := 2.184787750000000E+2 * factor;
+
+   t[1,49] := 2.564385990000000E+2 * factor;
+   t[2,49] := 2.279647670000000E+2 * factor;
+
+   t[1,50] := 2.651169130000000E+2 * factor;
+   t[2,50] := 2.370073390000000E+2 * factor;
+
+   t[1,51] := 2.754580990000000E+2 * factor;
+   t[2,51] := 2.472851560000000E+2 * factor;
+
+   t[1,52] := 2.852291260000000E+2 * factor;
+   t[2,52] := 2.568661800000000E+2 * factor;
+
+   t[1,53] := 2.939233090000000E+2 * factor;
+   t[2,53] := 2.663204960000000E+2 * factor;
+
+   t[1,54] := 3.036626890000000E+2 * factor;
+   t[2,54] := 2.760440370000000E+2 * factor;
+
+   t[1,55] := 3.139088130000000E+2 * factor;
+   t[2,55] := 2.860684810000000E+2 * factor;
+
+   t[1,56] := 3.235056760000000E+2 * factor;
+   t[2,56] := 2.957286680000000E+2 * factor;
+
+   t[1,57] := 3.345278020000000E+2 * factor;
+   t[2,57] := 3.057847600000000E+2 * factor;
+
+   t[1,58] := 3.455340880000000E+2 * factor;
+   t[2,58] := 3.175512080000000E+2 * factor;
+
+   t[1,59] := 3.562078250000000E+2 * factor;
+   t[2,59] := 3.270530400000000E+2 * factor;
+
+   t[1,60] := 3.678159180000000E+2 * factor;
+   t[2,60] := 3.379643250000000E+2 * factor;
+
+   t[1,61] := 3.779986570000000E+2 * factor;
+   t[2,61] := 3.492714840000000E+2 * factor;
+
+   t[1,62] := 3.876271970000000E+2 * factor;
+   t[2,62] := 3.585040890000000E+2 * factor;
+
+   t[1,63] := 3.990769040000000E+2 * factor;
+   t[2,63] := 3.704130550000000E+2 * factor;
+
+   t[1,64] := 4.088162840000000E+2 * factor;
+   t[2,64] := 3.818311160000000E+2 * factor;
+
+   t[1,65] := 4.181914370000000E+2 * factor;
+   t[2,65] := 3.912220460000000E+2 * factor;
+
+   t[1,66] := 4.294669190000000E+2 * factor;
+   t[2,66] := 4.036694640000000E+2 * factor;
+
+   t[1,67] := 4.406632690000000E+2 * factor;
+   t[2,67] := 4.146916200000000E+2 * factor;
+
+   t[1,68] := 4.511152950000000E+2 * factor;
+   t[2,68] := 4.252861330000000E+2 * factor;
+
+   t[1,69] := 4.636418460000000E+2 * factor;
+   t[2,69] := 4.379552310000000E+2 * factor;
+
+   t[1,70] := 4.762159730000000E+2 * factor;
+   t[2,70] := 4.494366150000000E+2 * factor;
+
+   t[1,71] := 4.876339720000000E+2 * factor;
+   t[2,71] := 4.612822570000000E+2 * factor;
+
+   t[1,72] := 4.990045170000000E+2 * factor;
+   t[2,72] := 4.742839050000000E+2 * factor;
+
+   t[1,73] := 5.103116760000000E+2 * factor;
+   t[2,73] := 4.871113590000000E+2 * factor;
+
+   t[1,74] := 5.210487670000000E+2 * factor;
+   t[2,74] := 4.989728390000000E+2 * factor;
+
+   t[1,75] := 5.323084110000000E+2 * factor;
+   t[2,75] := 5.106917720000000E+2 * factor;
+
+   t[1,76] := 5.434888920000000E+2 * factor;
+   t[2,76] := 5.235984499999999E+2 * factor;
+
+   t[1,77] := 5.540518190000000E+2 * factor;
+   t[2,77] := 5.348264160000000E+2 * factor;
+
+   t[1,78] := 5.664516599999999E+2 * factor;
+   t[2,78] := 5.465611570000000E+2 * factor;
+
+   t[1,79] := 5.795166630000000E+2 * factor;
+   t[2,79] := 5.602913210000000E+2 * factor;
+
+   t[1,80] := 5.914414670000000E+2 * factor;
+   t[2,80] := 5.718201900000000E+2 * factor;
+
+   t[1,81] := 6.052825319999999E+2 * factor;
+   t[2,81] := 5.854395140000000E+2 * factor;
+
+   t[1,82] := 6.194243770000001E+2 * factor;
+   t[2,82] := 5.991854860000000E+2 * factor;
+
+   t[1,83] := 6.302881470000000E+2 * factor;
+   t[2,83] := 6.101917720000000E+2 * factor;
+
+   t[1,84] := 6.429572750000000E+2 * factor;
+   t[2,84] := 6.243336180000000E+2 * factor;
+
+   t[1,85] := 6.559905400000000E+2 * factor;
+   t[2,85] := 6.374144900000000E+2 * factor;
+
+   t[1,86] := 6.658408200000000E+2 * factor;
+   t[2,86] := 6.480090330000001E+2 * factor;
+
+   t[1,87] := 6.770529790000001E+2 * factor;
+   t[2,87] := 6.625626830000000E+2 * factor;
+
+   t[1,88] := 6.894053340000000E+2 * factor;
+   t[2,88] := 6.750734250000001E+2 * factor;
+
+   t[1,89] := 6.998257450000000E+2 * factor;
+   t[2,89] := 6.871882320000000E+2 * factor;
+
+   t[1,90] := 7.139834590000000E+2 * factor;
+   t[2,90] := 7.015677490000001E+2 * factor;
+
+   t[1,91] := 7.281253050000000E+2 * factor;
+   t[2,91] := 7.144902340000000E+2 * factor;
+
+   t[1,92] := 7.406360470000000E+2 * factor;
+   t[2,92] := 7.273493040000000E+2 * factor;
+
+   t[1,93] := 7.563140870000000E+2 * factor;
+   t[2,93] := 7.410477910000000E+2 * factor;
+
+   t[1,94] := 7.694425050000000E+2 * factor;
+   t[2,94] := 7.544295650000000E+2 * factor;
+
+   t[1,95] := 7.808129880000000E+2 * factor;
+   t[2,95] := 7.670670170000000E+2 * factor;
+
+   t[1,96] := 7.945906370000000E+2 * factor;
+   t[2,96] := 7.795935670000000E+2 * factor;
+
+   t[1,97] := 8.069429930000000E+2 * factor;
+   t[2,97] := 7.934821170000000E+2 * factor;
+
+   t[1,98] := 8.173158570000000E+2 * factor;
+   t[2,98] := 8.058978270000000E+2 * factor;
+
+   t[1,99] := 8.306342770000000E+2 * factor;
+   t[2,99] := 8.185194090000000E+2 * factor;
+
+   t[1,100] := 8.437308960000000E+2 * factor;
+   t[2,100] := 8.338331910000000E+2 * factor;
+
+   t[1,101] := 8.558774410000000E+2 * factor;
+   t[2,101] := 8.462805790000000E+2 * factor;
+
+   t[1,102] := 8.709694820000000E+2 * factor;
+   t[2,102] := 8.610717770000000E+2 * factor;
+
+   t[1,103] := 8.855548100000000E+2 * factor;
+   t[2,103] := 8.759896850000000E+2 * factor;
+
+   t[1,104] := 8.993008420000000E+2 * factor;
+   t[2,104] := 8.881678470000000E+2 * factor;
+
+   t[1,105] := 9.140128170000000E+2 * factor;
+   t[2,105] := 9.031807860000000E+2 * factor;
+
+   t[1,106] := 9.275845950000000E+2 * factor;
+   t[2,106] := 9.168000490000000E+2 * factor;
+
+   t[1,107] := 9.404279170000000E+2 * factor;
+   t[2,107] := 9.280755000000000E+2 * factor;
+
+   t[1,108] := 9.541105350000000E+2 * factor;
+   t[2,108] := 9.433734740000000E+2 * factor;
+
+   t[1,109] := 9.662728880000000E+2 * factor;
+   t[2,109] := 9.562642820000000E+2 * factor;
+
+   t[1,110] := 9.779442750000000E+2 * factor;
+   t[2,110] := 9.692026370000000E+2 * factor;
+
+   t[1,111] := 9.914686280000000E+2 * factor;
+   t[2,111] := 9.845797730000000E+2 * factor;
+
+   t[1,112] := 1.005705505000000E+3 * factor;
+   t[2,112] := 9.983098750000000E+2 * factor;
+
+   t[1,113] := 1.019039673000000E+3 * factor;
+   t[2,113] := 1.012974426000000E+3 * factor;
+
+   t[1,114] := 1.034416870000000E+3 * factor;
+   t[2,114] := 1.028018921000000E+3 * factor;
+
+   t[1,115] := 1.050870850000000E+3 * factor;
+   t[2,115] := 1.043142700000000E+3 * factor;
+
+   t[1,116] := 1.064426758000000E+3 * factor;
+   t[2,116] := 1.056809448000000E+3 * factor;
+
+   t[1,117] := 1.078695435000000E+3 * factor;
+   t[2,117] := 1.070492188000000E+3 * factor;
+
+   t[1,118] := 1.093961670000000E+3 * factor;
+   t[2,118] := 1.085663452000000E+3 * factor;
+
+   t[1,119] := 1.106013184000000E+3 * factor;
+   t[2,119] := 1.098443359000000E+3 * factor;
+
+   t[1,120] := 1.119173218000000E+3 * factor;
+   t[2,120] := 1.111793457000000E+3 * factor;
+
+   t[1,121] := 1.132950928000000E+3 * factor;
+   t[2,121] := 1.127899048000000E+3 * factor;
+
+   t[1,122] := 1.145319092000000E+3 * factor;
+   t[2,122] := 1.140663086000000E+3 * factor;
+
+   t[1,123] := 1.160427002000000E+3 * factor;
+   t[2,123] := 1.155961060000000E+3 * factor;
+
+   t[1,124] := 1.176215820000000E+3 * factor;
+   t[2,124] := 1.172019165000000E+3 * factor;
+
+   t[1,125] := 1.189930176000000E+3 * factor;
+   t[2,125] := 1.185242554000000E+3 * factor;
+
+   t[1,126] := 1.207429321000000E+3 * factor;
+   t[2,126] := 1.202377563000000E+3 * factor;
+
+   t[1,127] := 1.223582520000000E+3 * factor;
+   t[2,127] := 1.217358765000000E+3 * factor;
+
+   t[1,128] := 1.235903198000000E+3 * factor;
+   t[2,128] := 1.230360474000000E+3 * factor;
+
+   t[1,129] := 1.252135498000000E+3 * factor;
+   t[2,129] := 1.248049683000000E+3 * factor;
+
+   t[1,130] := 1.267100952000000E+3 * factor;
+   t[2,130] := 1.262175781000000E+3 * factor;
+
+   t[1,131] := 1.278186401000000E+3 * factor;
+   t[2,131] := 1.276729370000000E+3 * factor;
+
+   (* Enter in the deformation gradient: units are dimensionless. *)
+
+   F.Create(4, dataSets);
+
+   F[1,1] := 9.971752E-01;
+   F[2,1] := -4.643131E-03;
+   F[3,1] := -1.523119E-03;
+   F[4,1] := 9.976766E-01;
+
+   F[1,2] := 1.000238E+00;
+   F[2,2] := -5.491596E-03;
+   F[3,2] := -1.943489E-03;
+   F[4,2] := 1.000473E+00;
+
+   F[1,3] := 1.003303E+00;
+   F[2,3] := -6.339171E-03;
+   F[3,3] := -2.365764E-03;
+   F[4,3] := 1.003272E+00;
+
+   F[1,4] := 1.006374E+00;
+   F[2,4] := -7.184175E-03;
+   F[3,4] := -2.792431E-03;
+   F[4,4] := 1.006076E+00;
+
+   F[1,5] := 1.009452E+00;
+   F[2,5] := -8.024475E-03;
+   F[3,5] := -3.226370E-03;
+   F[4,5] := 1.008891E+00;
+
+   F[1,6] := 1.012538E+00;
+   F[2,6] := -8.856783E-03;
+   F[3,6] := -3.670227E-03;
+   F[4,6] := 1.011718E+00;
+
+   F[1,7] := 1.015635E+00;
+   F[2,7] := -9.677239E-03;
+   F[3,7] := -4.126639E-03;
+   F[4,7] := 1.014558E+00;
+
+   F[1,8] := 1.018739E+00;
+   F[2,8] := -1.048185E-02;
+   F[3,8] := -4.598049E-03;
+   F[4,8] := 1.017411E+00;
+
+   F[1,9] := 1.021849E+00;
+   F[2,9] := -1.126662E-02;
+   F[3,9] := -5.086219E-03;
+   F[4,9] := 1.020276E+00;
+
+
+   F[1,10] := 1.024960E+00;
+   F[2,10] := -1.202785E-02;
+   F[3,10] := -5.592859E-03;
+   F[4,10] := 1.023148E+00;
+
+   F[1,11] := 1.028066E+00;
+   F[2,11] := -1.276225E-02;
+   F[3,11] := -6.119295E-03;
+   F[4,11] := 1.026023E+00;
+
+   F[1,12] := 1.031159E+00;
+   F[2,12] := -1.346645E-02;
+   F[3,12] := -6.666637E-03;
+   F[4,12] := 1.028896E+00;
+
+   F[1,13] := 1.034231E+00;
+   F[2,13] := -1.413780E-02;
+   F[3,13] := -7.235681E-03;
+   F[4,13] := 1.031760E+00;
+
+   F[1,14] := 1.037275E+00;
+   F[2,14] := -1.477494E-02;
+   F[3,14] := -7.826789E-03;
+   F[4,14] := 1.034607E+00;
+
+   F[1,15] := 1.040281E+00;
+   F[2,15] := -1.537638E-02;
+   F[3,15] := -8.440191E-03;
+   F[4,15] := 1.037432E+00;
+
+   F[1,16] := 1.043242E+00;
+   F[2,16] := -1.594091E-02;
+   F[3,16] := -9.075832E-03;
+   F[4,16] := 1.040228E+00;
+
+   F[1,17] := 1.046150E+00;
+   F[2,17] := -1.646788E-02;
+   F[3,17] := -9.733219E-03;
+   F[4,17] := 1.042990E+00;
+
+   F[1,18] := 1.048998E+00;
+   F[2,18] := -1.695762E-02;
+   F[3,18] := -1.041163E-02;
+   F[4,18] := 1.045713E+00;
+
+   F[1,19] := 1.051781E+00;
+   F[2,19] := -1.741146E-02;
+   F[3,19] := -1.110992E-02;
+   F[4,19] := 1.048392E+00;
+
+   F[1,20] := 1.054490E+00;
+   F[2,20] := -1.783142E-02;
+   F[3,20] := -1.182634E-02;
+   F[4,20] := 1.051023E+00;
+
+   F[1,21] := 1.057122E+00;
+   F[2,21] := -1.821968E-02;
+   F[3,21] := -1.255866E-02;
+   F[4,21] := 1.053600E+00;
+
+   F[1,22] := 1.059671E+00;
+   F[2,22] := -1.857872E-02;
+   F[3,22] := -1.330425E-02;
+   F[4,22] := 1.056120E+00;
+
+   F[1,23] := 1.062134E+00;
+   F[2,23] := -1.891157E-02;
+   F[3,23] := -1.406068E-02;
+   F[4,23] := 1.058577E+00;
+
+   F[1,24] := 1.064510E+00;
+   F[2,24] := -1.922154E-02;
+   F[3,24] := -1.482563E-02;
+   F[4,24] := 1.060968E+00;
+
+   F[1,25] := 1.066795E+00;
+   F[2,25] := -1.951204E-02;
+   F[3,25] := -1.559649E-02;
+   F[4,25] := 1.063289E+00;
+
+   F[1,26] := 1.068988E+00;
+   F[2,26] := -1.978699E-02;
+   F[3,26] := -1.637028E-02;
+   F[4,26] := 1.065538E+00;
+
+   F[1,27] := 1.071089E+00;
+   F[2,27] := -2.004973E-02;
+   F[3,27] := -1.714404E-02;
+   F[4,27] := 1.067713E+00;
+
+   F[1,28] := 1.073100E+00;
+   F[2,28] := -2.030325E-02;
+   F[3,28] := -1.791437E-02;
+   F[4,28] := 1.069815E+00;
+
+   F[1,29] := 1.075022E+00;
+   F[2,29] := -2.054979E-02;
+   F[3,29] := -1.867737E-02;
+   F[4,29] := 1.071844E+00;
+
+   F[1,30] := 1.076859E+00;
+   F[2,30] := -2.079091E-02;
+   F[3,30] := -1.942862E-02;
+   F[4,30] := 1.073802E+00;
+
+   F[1,31] := 1.078615E+00;
+   F[2,31] := -2.102756E-02;
+   F[3,31] := -2.016399E-02;
+   F[4,31] := 1.075689E+00;
+
+   F[1,32] := 1.080291E+00;
+   F[2,32] := -2.126021E-02;
+   F[3,32] := -2.088048E-02;
+   F[4,32] := 1.077507E+00;
+
+   F[1,33] := 1.081892E+00;
+   F[2,33] := -2.148887E-02;
+   F[3,33] := -2.157605E-02;
+   F[4,33] := 1.079255E+00;
+
+   F[1,34] := 1.083418E+00;
+   F[2,34] := -2.171347E-02;
+   F[3,34] := -2.224925E-02;
+   F[4,34] := 1.080934E+00;
+
+   F[1,35] := 1.084875E+00;
+   F[2,35] := -2.193413E-02;
+   F[3,35] := -2.289886E-02;
+   F[4,35] := 1.082545E+00;
+
+   F[1,36] := 1.086266E+00;
+   F[2,36] := -2.215106E-02;
+   F[3,36] := -2.352361E-02;
+   F[4,36] := 1.084087E+00;
+
+   F[1,37] := 1.087594E+00;
+   F[2,37] := -2.236431E-02;
+   F[3,37] := -2.412253E-02;
+   F[4,37] := 1.085563E+00;
+
+   F[1,38] := 1.088862E+00;
+   F[2,38] := -2.257363E-02;
+   F[3,38] := -2.469498E-02;
+   F[4,38] := 1.086974E+00;
+
+   F[1,39] := 1.090074E+00;
+   F[2,39] := -2.277879E-02;
+   F[3,39] := -2.524030E-02;
+   F[4,39] := 1.088321E+00;
+
+   F[1,40] := 1.091231E+00;
+   F[2,40] := -2.298007E-02;
+   F[3,40] := -2.575826E-02;
+   F[4,40] := 1.089609E+00;
+
+   F[1,41] := 1.092337E+00;
+   F[2,41] := -2.317821E-02;
+   F[3,41] := -2.624906E-02;
+   F[4,41] := 1.090840E+00;
+
+   F[1,42] := 1.093393E+00;
+   F[2,42] := -2.337421E-02;
+   F[3,42] := -2.671303E-02;
+   F[4,42] := 1.092017E+00;
+
+   F[1,43] := 1.094402E+00;
+   F[2,43] := -2.356880E-02;
+   F[3,43] := -2.715046E-02;
+   F[4,43] := 1.093143E+00;
+
+   F[1,44] := 1.095366E+00;
+   F[2,44] := -2.376220E-02;
+   F[3,44] := -2.756179E-02;
+   F[4,44] := 1.094221E+00;
+
+   F[1,45] := 1.096289E+00;
+   F[2,45] := -2.395413E-02;
+   F[3,45] := -2.794765E-02;
+   F[4,45] := 1.095254E+00;
+
+   F[1,46] := 1.097176E+00;
+   F[2,46] := -2.414414E-02;
+   F[3,46] := -2.830897E-02;
+   F[4,46] := 1.096245E+00;
+
+   F[1,47] := 1.098030E+00;
+   F[2,47] := -2.433159E-02;
+   F[3,47] := -2.864640E-02;
+   F[4,47] := 1.097197E+00;
+
+   F[1,48] := 1.098854E+00;
+   F[2,48] := -2.451564E-02;
+   F[3,48] := -2.896031E-02;
+   F[4,48] := 1.098112E+00;
+
+   F[1,49] := 1.099649E+00;
+   F[2,49] := -2.469567E-02;
+   F[3,49] := -2.925145E-02;
+   F[4,49] := 1.098993E+00;
+
+   F[1,50] := 1.100417E+00;
+   F[2,50] := -2.487178E-02;
+   F[3,50] := -2.952105E-02;
+   F[4,50] := 1.099843E+00;
+
+   F[1,51] := 1.101158E+00;
+   F[2,51] := -2.504477E-02;
+   F[3,51] := -2.977064E-02;
+   F[4,51] := 1.100662E+00;
+
+   F[1,52] := 1.101872E+00;
+   F[2,52] := -2.521581E-02;
+   F[3,52] := -3.000190E-02;
+   F[4,52] := 1.101452E+00;
+
+   F[1,53] := 1.102559E+00;
+   F[2,53] := -2.538550E-02;
+   F[3,53] := -3.021664E-02;
+   F[4,53] := 1.102213E+00;
+
+   F[1,54] := 1.103218E+00;
+   F[2,54] := -2.555365E-02;
+   F[3,54] := -3.041696E-02;
+   F[4,54] := 1.102944E+00;
+
+   F[1,55] := 1.103853E+00;
+   F[2,55] := -2.571957E-02;
+   F[3,55] := -3.060478E-02;
+   F[4,55] := 1.103647E+00;
+
+   F[1,56] := 1.104464E+00;
+   F[2,56] := -2.588243E-02;
+   F[3,56] := -3.078168E-02;
+   F[4,56] := 1.104323E+00;
+
+   F[1,57] := 1.105055E+00;
+   F[2,57] := -2.604215E-02;
+   F[3,57] := -3.094885E-02;
+   F[4,57] := 1.104973E+00;
+
+   F[1,58] := 1.105626E+00;
+   F[2,58] := -2.619965E-02;
+   F[3,58] := -3.110749E-02;
+   F[4,58] := 1.105599E+00;
+
+   F[1,59] := 1.106179E+00;
+   F[2,59] := -2.635654E-02;
+   F[3,59] := -3.125881E-02;
+   F[4,59] := 1.106201E+00;
+
+   F[1,60] := 1.106713E+00;
+   F[2,60] := -2.651425E-02;
+   F[3,60] := -3.140386E-02;
+   F[4,60] := 1.106780E+00;
+
+   F[1,61] := 1.107231E+00;
+   F[2,61] := -2.667321E-02;
+   F[3,61] := -3.154304E-02;
+   F[4,61] := 1.107334E+00;
+
+   F[1,62] := 1.107731E+00;
+   F[2,62] := -2.683307E-02;
+   F[3,62] := -3.167645E-02;
+   F[4,62] := 1.107866E+00;
+
+   F[1,63] := 1.108218E+00;
+   F[2,63] := -2.699267E-02;
+   F[3,63] := -3.180446E-02;
+   F[4,63] := 1.108375E+00;
+
+   F[1,64] := 1.108692E+00;
+   F[2,64] := -2.715020E-02;
+   F[3,64] := -3.192765E-02;
+   F[4,64] := 1.108863E+00;
+
+   F[1,65] := 1.109154E+00;
+   F[2,65] := -2.730423E-02;
+   F[3,65] := -3.204669E-02;
+   F[4,65] := 1.109332E+00;
+
+   F[1,66] := 1.109607E+00;
+   F[2,66] := -2.745392E-02;
+   F[3,66] := -3.216194E-02;
+   F[4,66] := 1.109783E+00;
+
+   F[1,67] := 1.110050E+00;
+   F[2,67] := -2.759937E-02;
+   F[3,67] := -3.227355E-02;
+   F[4,67] := 1.110219E+00;
+
+   F[1,68] := 1.110483E+00;
+   F[2,68] := -2.774153E-02;
+   F[3,68] := -3.238123E-02;
+   F[4,68] := 1.110644E+00;
+
+   F[1,69] := 1.110907E+00;
+   F[2,69] := -2.788148E-02;
+   F[3,69] := -3.248444E-02;
+   F[4,69] := 1.111059E+00;
+
+   F[1,70] := 1.111323E+00;
+   F[2,70] := -2.802018E-02;
+   F[3,70] := -3.258254E-02;
+   F[4,70] := 1.111465E+00;
+
+   F[1,71] := 1.111730E+00;
+   F[2,71] := -2.815821E-02;
+   F[3,71] := -3.267474E-02;
+   F[4,71] := 1.111862E+00;
+
+   F[1,72] := 1.112128E+00;
+   F[2,72] := -2.829515E-02;
+   F[3,72] := -3.276055E-02;
+   F[4,72] := 1.112251E+00;
+
+   F[1,73] := 1.112520E+00;
+   F[2,73] := -2.842994E-02;
+   F[3,73] := -3.283979E-02;
+   F[4,73] := 1.112633E+00;
+
+   F[1,74] := 1.112904E+00;
+   F[2,74] := -2.856151E-02;
+   F[3,74] := -3.291256E-02;
+   F[4,74] := 1.113008E+00;
+
+   F[1,75] := 1.113282E+00;
+   F[2,75] := -2.868900E-02;
+   F[3,75] := -3.297934E-02;
+   F[4,75] := 1.113379E+00;
+
+   F[1,76] := 1.113654E+00;
+   F[2,76] := -2.881208E-02;
+   F[3,76] := -3.304122E-02;
+   F[4,76] := 1.113744E+00;
+
+   F[1,77] := 1.114019E+00;
+   F[2,77] := -2.893100E-02;
+   F[3,77] := -3.309947E-02;
+   F[4,77] := 1.114105E+00;
+
+   F[1,78] := 1.114377E+00;
+   F[2,78] := -2.904636E-02;
+   F[3,78] := -3.315488E-02;
+   F[4,78] := 1.114461E+00;
+
+   F[1,79] := 1.114726E+00;
+   F[2,79] := -2.915841E-02;
+   F[3,79] := -3.320770E-02;
+   F[4,79] := 1.114812E+00;
+
+   F[1,80] := 1.115067E+00;
+   F[2,80] := -2.926677E-02;
+   F[3,80] := -3.325760E-02;
+   F[4,80] := 1.115157E+00;
+
+   F[1,81] := 1.115398E+00;
+   F[2,81] := -2.937044E-02;
+   F[3,81] := -3.330442E-02;
+   F[4,81] := 1.115495E+00;
+
+   F[1,82] := 1.115717E+00;
+   F[2,82] := -2.946786E-02;
+   F[3,82] := -3.334892E-02;
+   F[4,82] := 1.115825E+00;
+
+   F[1,83] := 1.116024E+00;
+   F[2,83] := -2.955777E-02;
+   F[3,83] := -3.339259E-02;
+   F[4,83] := 1.116146E+00;
+
+   F[1,84] := 1.116318E+00;
+   F[2,84] := -2.963935E-02;
+   F[3,84] := -3.343734E-02;
+   F[4,84] := 1.116457E+00;
+
+   F[1,85] := 1.116602E+00;
+   F[2,85] := -2.971209E-02;
+   F[3,85] := -3.348503E-02;
+   F[4,85] := 1.116758E+00;
+
+   F[1,86] := 1.116876E+00;
+   F[2,86] := -2.977582E-02;
+   F[3,86] := -3.353726E-02;
+   F[4,86] := 1.117050E+00;
+
+   F[1,87] := 1.117141E+00;
+   F[2,87] := -2.983089E-02;
+   F[3,87] := -3.359488E-02;
+   F[4,87] := 1.117333E+00;
+
+   F[1,88] := 1.117400E+00;
+   F[2,88] := -2.987895E-02;
+   F[3,88] := -3.365787E-02;
+   F[4,88] := 1.117606E+00;
+
+   F[1,89] := 1.117654E+00;
+   F[2,89] := -2.992207E-02;
+   F[3,89] := -3.372540E-02;
+   F[4,89] := 1.117872E+00;
+
+   F[1,90] := 1.117903E+00;
+   F[2,90] := -2.996249E-02;
+   F[3,90] := -3.379623E-02;
+   F[4,90] := 1.118130E+00;
+
+   F[1,91] := 1.118148E+00;
+   F[2,91] := -3.000256E-02;
+   F[3,91] := -3.386896E-02;
+   F[4,91] := 1.118382E+00;
+
+   F[1,92] := 1.118388E+00;
+   F[2,92] := -3.004457E-02;
+   F[3,92] := -3.394234E-02;
+   F[4,92] := 1.118629E+00;
+
+   F[1,93] := 1.118622E+00;
+   F[2,93] := -3.009012E-02;
+   F[3,93] := -3.401539E-02;
+   F[4,93] := 1.118872E+00;
+
+   F[1,94] := 1.118849E+00;
+   F[2,94] := -3.013999E-02;
+   F[3,94] := -3.408732E-02;
+   F[4,94] := 1.119112E+00;
+
+   F[1,95] := 1.119069E+00;
+   F[2,95] := -3.019462E-02;
+   F[3,95] := -3.415749E-02;
+   F[4,95] := 1.119350E+00;
+
+   F[1,96] := 1.119281E+00;
+   F[2,96] := -3.025413E-02;
+   F[3,96] := -3.422538E-02;
+   F[4,96] := 1.119588E+00;
+
+   F[1,97] := 1.119486E+00;
+   F[2,97] := -3.031830E-02;
+   F[3,97] := -3.429041E-02;
+   F[4,97] := 1.119825E+00;
+
+   F[1,98] := 1.119684E+00;
+   F[2,98] := -3.038653E-02;
+   F[3,98] := -3.435148E-02;
+   F[4,98] := 1.120062E+00;
+
+   F[1,99] := 1.119875E+00;
+   F[2,99] := -3.045779E-02;
+   F[3,99] := -3.440708E-02;
+   F[4,99] := 1.120300E+00;
+
+   F[1,100] := 1.120059E+00;
+   F[2,100] := -3.053068E-02;
+   F[3,100] := -3.445607E-02;
+   F[4,100] := 1.120539E+00;
+
+   F[1,101] := 1.120237E+00;
+   F[2,101] := -3.060383E-02;
+   F[3,101] := -3.449789E-02;
+   F[4,101] := 1.120781E+00;
+
+   F[1,102] := 1.120409E+00;
+   F[2,102] := -3.067599E-02;
+   F[3,102] := -3.453255E-02;
+   F[4,102] := 1.121024E+00;
+
+   F[1,103] := 1.120578E+00;
+   F[2,103] := -3.074593E-02;
+   F[3,103] := -3.456045E-02;
+   F[4,103] := 1.121269E+00;
+
+   F[1,104] := 1.120745E+00;
+   F[2,104] := -3.081243E-02;
+   F[3,104] := -3.458195E-02;
+   F[4,104] := 1.121513E+00;
+
+   F[1,105] := 1.120910E+00;
+   F[2,105] := -3.087418E-02;
+   F[3,105] := -3.459735E-02;
+   F[4,105] := 1.121756E+00;
+
+   F[1,106] := 1.121076E+00;
+   F[2,106] := -3.092988E-02;
+   F[3,106] := -3.460731E-02;
+   F[4,106] := 1.121999E+00;
+
+   F[1,107] := 1.121246E+00;
+   F[2,107] := -3.097859E-02;
+   F[3,107] := -3.461281E-02;
+   F[4,107] := 1.122240E+00;
+
+   F[1,108] := 1.121421E+00;
+   F[2,108] := -3.101986E-02;
+   F[3,108] := -3.461464E-02;
+   F[4,108] := 1.122480E+00;
+
+   F[1,109] := 1.121605E+00;
+   F[2,109] := -3.105367E-02;
+   F[3,109] := -3.461279E-02;
+   F[4,109] := 1.122718E+00;
+
+   F[1,110] := 1.121801E+00;
+   F[2,110] := -3.108067E-02;
+   F[3,110] := -3.460667E-02;
+   F[4,110] := 1.122955E+00;
+
+   F[1,111] := 1.122008E+00;
+   F[2,111] := -3.110197E-02;
+   F[3,111] := -3.459589E-02;
+   F[4,111] := 1.123190E+00;
+
+   F[1,112] := 1.122224E+00;
+   F[2,112] := -3.111859E-02;
+   F[3,112] := -3.458059E-02;
+   F[4,112] := 1.123423E+00;
+
+   F[1,113] := 1.122448E+00;
+   F[2,113] := -3.113123E-02;
+   F[3,113] := -3.456121E-02;
+   F[4,113] := 1.123653E+00;
+
+   F[1,114] := 1.122676E+00;
+   F[2,114] := -3.114049E-02;
+   F[3,114] := -3.453814E-02;
+   F[4,114] := 1.123879E+00;
+
+   F[1,115] := 1.122904E+00;
+   F[2,115] := -3.114767E-02;
+   F[3,115] := -3.451163E-02;
+   F[4,115] := 1.124100E+00;
+
+   F[1,116] := 1.123130E+00;
+   F[2,116] := -3.115486E-02;
+   F[3,116] := -3.448217E-02;
+   F[4,116] := 1.124317E+00;
+
+   F[1,117] := 1.123353E+00;
+   F[2,117] := -3.116428E-02;
+   F[3,117] := -3.445009E-02;
+   F[4,117] := 1.124529E+00;
+
+   F[1,118] := 1.123571E+00;
+   F[2,118] := -3.117818E-02;
+   F[3,118] := -3.441544E-02;
+   F[4,118] := 1.124737E+00;
+
+   F[1,119] := 1.123786E+00;
+   F[2,119] := -3.119865E-02;
+   F[3,119] := -3.437773E-02;
+   F[4,119] := 1.124940E+00;
+
+   F[1,120] := 1.123998E+00;
+   F[2,120] := -3.122722E-02;
+   F[3,120] := -3.433674E-02;
+   F[4,120] := 1.125138E+00;
+
+   F[1,121] := 1.124206E+00;
+   F[2,121] := -3.126460E-02;
+   F[3,121] := -3.429276E-02;
+   F[4,121] := 1.125333E+00;
+
+   F[1,122] := 1.124411E+00;
+   F[2,122] := -3.131017E-02;
+   F[3,122] := -3.424660E-02;
+   F[4,122] := 1.125525E+00;
+
+   F[1,123] := 1.124612E+00;
+   F[2,123] := -3.136255E-02;
+   F[3,123] := -3.419941E-02;
+   F[4,123] := 1.125714E+00;
+
+   F[1,124] := 1.124809E+00;
+   F[2,124] := -3.142014E-02;
+   F[3,124] := -3.415177E-02;
+   F[4,124] := 1.125900E+00;
+
+   F[1,125] := 1.125000E+00;
+   F[2,125] := -3.148127E-02;
+   F[3,125] := -3.410370E-02;
+   F[4,125] := 1.126085E+00;
+
+   F[1,126] := 1.125186E+00;
+   F[2,126] := -3.154463E-02;
+   F[3,126] := -3.405500E-02;
+   F[4,126] := 1.126267E+00;
+
+   F[1,127] := 1.125367E+00;
+   F[2,127] := -3.160927E-02;
+   F[3,127] := -3.400543E-02;
+   F[4,127] := 1.126449E+00;
+
+   F[1,128] := 1.125545E+00;
+   F[2,128] := -3.167463E-02;
+   F[3,128] := -3.395482E-02;
+   F[4,128] := 1.126630E+00;
+
+   F[1,129] := 1.125720E+00;
+   F[2,129] := -3.174046E-02;
+   F[3,129] := -3.390345E-02;
+   F[4,129] := 1.126811E+00;
+
+   F[1,130] := 1.125895E+00;
+   F[2,130] := -3.180674E-02;
+   F[3,130] := -3.385171E-02;
+   F[4,130] := 1.126992E+00;
+
+   F[1,131] := 1.126069E+00;
+   F[2,131] := -3.187320E-02;
+   F[3,131] := -3.379999E-02;
+   F[4,131] := 1.127172E+00;
+
+   (* Enter the rates of the deformation gradient tensor: units are 1/s. *)
+
+   dF.Create(8, dataSets);
+
+   dF[1,1] := 3.062357E-03;
+   dF[2,1] := -8.485803E-04;
+   dF[3,1] := -4.200739E-04;
+   dF[4,1] := 2.795958E-03;
+
+   dF[1,2] := 3.063645E-03;
+   dF[2,2] := -8.482346E-04;
+   dF[3,2] := -4.209637E-04;
+   dF[4,2] := 2.797061E-03;
+
+   dF[1,3] := 3.067448E-03;
+   dF[2,3] := -8.466009E-04;
+   dF[3,3] := -4.240064E-04;
+   dF[4,3] := 2.801202E-03;
+
+   dF[1,4] := 3.073790E-03;
+   dF[2,4] := -8.430971E-04;
+   dF[3,4] := -4.298370E-04;
+   dF[4,4] := 2.809095E-03;
+
+   dF[1,5] := 3.082183E-03;
+   dF[2,5] := -8.369209E-04;
+   dF[3,5] := -4.384634E-04;
+   dF[4,5] := 2.820235E-03;
+
+   dF[1,6] := 3.091605E-03;
+   dF[2,6] := -8.270421E-04;
+   dF[3,6] := -4.496945E-04;
+   dF[4,6] := 2.833381E-03;
+
+   dF[1,7] := 3.100527E-03;
+   dF[2,7] := -8.132039E-04;
+   dF[3,7] := -4.635667E-04;
+   dF[4,7] := 2.847027E-03;
+
+   dF[1,8] := 3.107583E-03;
+   dF[2,8] := -7.953398E-04;
+   dF[3,8] := -4.795069E-04;
+   dF[4,8] := 2.859562E-03;
+
+   dF[1,9] := 3.111538E-03;
+   dF[2,9] := -7.735759E-04;
+   dF[3,9] := -4.971458E-04;
+   dF[4,9] := 2.869075E-03;
+
+   dF[1,10] := 3.109858E-03;
+   dF[2,10] := -7.483751E-04;
+   dF[3,10] := -5.163392E-04;
+   dF[4,10] := 2.874464E-03;
+
+   dF[1,11] := 3.100774E-03;
+   dF[2,11] := -7.198310E-04;
+   dF[3,11] := -5.367241E-04;
+   dF[4,11] := 2.874944E-03;
+
+   dF[1,12] := 3.083965E-03;
+   dF[2,12] := -6.880891E-04;
+   dF[3,12] := -5.581006E-04;
+   dF[4,12] := 2.869379E-03;
+
+   dF[1,13] := 3.059207E-03;
+   dF[2,13] := -6.544645E-04;
+   dF[3,13] := -5.800306E-04;
+   dF[4,13] := 2.856905E-03;
+
+   dF[1,14] := 3.026275E-03;
+   dF[2,14] := -6.195330E-04;
+   dF[3,14] := -6.022329E-04;
+   dF[4,14] := 2.837396E-03;
+
+   dF[1,15] := 2.984950E-03;
+   dF[2,15] := -5.831422E-04;
+   dF[3,15] := -6.245687E-04;
+   dF[4,15] := 2.811447E-03;
+
+   dF[1,16] := 2.935764E-03;
+   dF[2,16] := -5.457840E-04;
+   dF[3,16] := -6.466173E-04;
+   dF[4,16] := 2.779907E-03;
+
+   dF[1,17] := 2.879321E-03;
+   dF[2,17] := -5.082189E-04;
+   dF[3,17] := -6.680458E-04;
+   dF[4,17] := 2.743256E-03;
+
+   dF[1,18] := 2.816310E-03;
+   dF[2,18] := -4.714906E-04;
+   dF[3,18] := -6.885934E-04;
+   dF[4,18] := 2.701620E-03;
+
+   dF[1,19] := 2.746891E-03;
+   dF[2,19] := -4.365458E-04;
+   dF[3,19] := -7.076847E-04;
+   dF[4,19] := 2.655410E-03;
+
+   dF[1,20] := 2.671344E-03;
+   dF[2,20] := -4.037297E-04;
+   dF[3,20] := -7.247867E-04;
+   dF[4,20] := 2.604729E-03;
+
+   dF[1,21] := 2.590807E-03;
+   dF[2,21] := -3.731883E-04;
+   dF[3,21] := -7.393930E-04;
+   dF[4,21] := 2.549389E-03;
+
+   dF[1,22] := 2.506651E-03;
+   dF[2,22] := -3.454092E-04;
+   dF[3,22] := -7.513970E-04;
+   dF[4,22] := 2.489368E-03;
+
+   dF[1,23] := 2.419891E-03;
+   dF[2,23] := -3.208570E-04;
+   dF[3,23] := -7.610859E-04;
+   dF[4,23] := 2.424842E-03;
+
+   dF[1,24] := 2.330616E-03;
+   dF[2,24] := -2.996089E-04;
+   dF[3,24] := -7.683804E-04;
+   dF[4,24] := 2.356386E-03;
+
+   dF[1,25] := 2.239365E-03;
+   dF[2,25] := -2.821129E-04;
+   dF[3,25] := -7.728187E-04;
+   dF[4,25] := 2.285000E-03;
+
+   dF[1,26] := 2.147140E-03;
+   dF[2,26] := -2.683179E-04;
+   dF[3,26] := -7.742902E-04;
+   dF[4,26] := 2.211980E-03;
+
+   dF[1,27] := 2.055479E-03;
+   dF[2,27] := -2.576845E-04;
+   dF[3,27] := -7.726552E-04;
+   dF[4,27] := 2.138537E-03;
+
+   dF[1,28] := 1.965927E-03;
+   dF[2,28] := -2.497226E-04;
+   dF[3,28] := -7.673695E-04;
+   dF[4,28] := 2.065402E-03;
+
+   dF[1,29] := 1.879456E-03;
+   dF[2,29] := -2.436194E-04;
+   dF[3,29] := -7.578651E-04;
+   dF[4,29] := 1.993301E-03;
+
+   dF[1,30] := 1.795912E-03;
+   dF[2,30] := -2.387658E-04;
+   dF[3,30] := -7.439147E-04;
+   dF[4,30] := 1.922405E-03;
+
+   dF[1,31] := 1.715307E-03;
+   dF[2,31] := -2.346161E-04;
+   dF[3,31] := -7.263423E-04;
+   dF[4,31] := 1.852208E-03;
+
+   dF[1,32] := 1.637913E-03;
+   dF[2,32] := -2.306685E-04;
+   dF[3,32] := -7.063081E-04;
+   dF[4,32] := 1.782741E-03;
+
+   dF[1,33] := 1.563114E-03;
+   dF[2,33] := -2.266246E-04;
+   dF[3,33] := -6.845986E-04;
+   dF[4,33] := 1.713775E-03;
+
+   dF[1,34] := 1.491323E-03;
+   dF[2,34] := -2.226036E-04;
+   dF[3,34] := -6.616104E-04;
+   dF[4,34] := 1.644857E-03;
+
+   dF[1,35] := 1.423427E-03;
+   dF[2,35] := -2.187643E-04;
+   dF[3,35] := -6.373774E-04;
+   dF[4,35] := 1.576351E-03;
+
+   dF[1,36] := 1.358980E-03;
+   dF[2,36] := -2.151061E-04;
+   dF[3,36] := -6.119604E-04;
+   dF[4,36] := 1.508908E-03;
+
+   dF[1,37] := 1.297472E-03;
+   dF[2,37] := -2.113407E-04;
+   dF[3,37] := -5.857924E-04;
+   dF[4,37] := 1.442936E-03;
+
+   dF[1,38] := 1.239030E-03;
+   dF[2,38] := -2.072424E-04;
+   dF[3,38] := -5.589711E-04;
+   dF[4,38] := 1.378797E-03;
+
+   dF[1,39] := 1.183840E-03;
+   dF[2,39] := -2.031350E-04;
+   dF[3,39] := -5.316332E-04;
+   dF[4,39] := 1.317239E-03;
+
+   dF[1,40] := 1.131573E-03;
+   dF[2,40] := -1.995538E-04;
+   dF[3,40] := -5.043297E-04;
+   dF[4,40] := 1.258872E-03;
+
+   dF[1,41] := 1.080858E-03;
+   dF[2,41] := -1.969148E-04;
+   dF[3,41] := -4.773386E-04;
+   dF[4,41] := 1.203422E-03;
+
+   dF[1,42] := 1.031732E-03;
+   dF[2,42] := -1.952106E-04;
+   dF[3,42] := -4.506428E-04;
+   dF[4,42] := 1.150744E-03;
+
+   dF[1,43] := 9.856671E-04;
+   dF[2,43] := -1.940036E-04;
+   dF[3,43] := -4.242937E-04;
+   dF[4,43] := 1.101253E-03;
+
+   dF[1,44] := 9.432123E-04;
+   dF[2,44] := -1.927329E-04;
+   dF[3,44] := -3.984619E-04;
+   dF[4,44] := 1.054988E-03;
+
+   dF[1,45] := 9.046302E-04;
+   dF[2,45] := -1.910609E-04;
+   dF[3,45] := -3.734385E-04;
+   dF[4,45] := 1.011636E-03;
+
+   dF[1,46] := 8.699507E-04;
+   dF[2,46] := -1.888608E-04;
+   dF[3,46] := -3.493019E-04;
+   dF[4,46] := 9.711157E-04;
+
+   dF[1,47] := 8.384215E-04;
+   dF[2,47] := -1.858815E-04;
+   dF[3,47] := -3.255926E-04;
+   dF[4,47] := 9.332236E-04;
+
+   dF[1,48] := 8.090875E-04;
+   dF[2,48] := -1.820859E-04;
+   dF[3,48] := -3.023544E-04;
+   dF[4,48] := 8.978795E-04;
+
+   dF[1,49] := 7.814125E-04;
+   dF[2,49] := -1.779947E-04;
+   dF[3,49] := -2.801361E-04;
+   dF[4,49] := 8.651367E-04;
+
+   dF[1,50] := 7.547406E-04;
+   dF[2,50] := -1.743638E-04;
+   dF[3,50] := -2.593195E-04;
+   dF[4,50] := 8.344317E-04;
+
+   dF[1,51] := 7.277272E-04;
+   dF[2,51] := -1.718447E-04;
+   dF[3,51] := -2.401428E-04;
+   dF[4,51] := 8.046189E-04;
+
+   dF[1,52] := 7.001332E-04;
+   dF[2,52] := -1.703406E-04;
+   dF[3,52] := -2.226769E-04;
+   dF[4,52] := 7.749600E-04;
+
+   dF[1,53] := 6.728336E-04;
+   dF[2,53] := -1.689990E-04;
+   dF[3,53] := -2.071777E-04;
+   dF[4,53] := 7.455349E-04;
+
+   dF[1,54] := 6.466734E-04;
+   dF[2,54] := -1.671843E-04;
+   dF[3,54] := -1.937752E-04;
+   dF[4,54] := 7.168287E-04;
+
+   dF[1,55] := 6.225067E-04;
+   dF[2,55] := -1.644870E-04;
+   dF[3,55] := -1.821396E-04;
+   dF[4,55] := 6.893612E-04;
+
+   dF[1,56] := 6.006174E-04;
+   dF[2,56] := -1.612153E-04;
+   dF[3,56] := -1.718415E-04;
+   dF[4,56] := 6.631393E-04;
+
+   dF[1,57] := 5.807228E-04;
+   dF[2,57] := -1.583862E-04;
+   dF[3,57] := -1.626988E-04;
+   dF[4,57] := 6.380605E-04;
+
+   dF[1,58] := 5.619925E-04;
+   dF[2,58] := -1.569116E-04;
+   dF[3,58] := -1.547818E-04;
+   dF[4,58] := 6.139621E-04;
+
+   dF[1,59] := 5.436702E-04;
+   dF[2,59] := -1.571330E-04;
+   dF[3,59] := -1.480654E-04;
+   dF[4,59] := 5.902707E-04;
+
+   dF[1,60] := 5.256904E-04;
+   dF[2,60] := -1.583325E-04;
+   dF[3,60] := -1.420820E-04;
+   dF[4,60] := 5.665842E-04;
+
+   dF[1,61] := 5.086731E-04;
+   dF[2,61] := -1.595367E-04;
+   dF[3,61] := -1.362634E-04;
+   dF[4,61] := 5.430406E-04;
+
+   dF[1,62] := 4.933237E-04;
+   dF[2,62] := -1.599956E-04;
+   dF[3,62] := -1.306327E-04;
+   dF[4,62] := 5.201516E-04;
+
+   dF[1,63] := 4.798828E-04;
+   dF[2,63] := -1.588561E-04;
+   dF[3,63] := -1.254802E-04;
+   dF[4,63] := 4.984473E-04;
+
+   dF[1,64] := 4.681525E-04;
+   dF[2,64] := -1.559790E-04;
+   dF[3,64] := -1.210295E-04;
+   dF[4,64] := 4.780742E-04;
+
+   dF[1,65] := 4.575263E-04;
+   dF[2,65] := -1.519245E-04;
+   dF[3,65] := -1.171014E-04;
+   dF[4,65] := 4.593536E-04;
+
+   dF[1,66] := 4.475636E-04;
+   dF[2,66] := -1.474673E-04;
+   dF[3,66] := -1.134403E-04;
+   dF[4,66] := 4.431946E-04;
+
+   dF[1,67] := 4.380000E-04;
+   dF[2,67] := -1.436249E-04;
+   dF[3,67] := -1.097191E-04;
+   dF[4,67] := 4.301835E-04;
+
+   dF[1,68] := 4.287562E-04;
+   dF[2,68] := -1.408808E-04;
+   dF[3,68] := -1.055423E-04;
+   dF[4,68] := 4.197044E-04;
+
+   dF[1,69] := 4.199278E-04;
+   dF[2,69] := -1.391761E-04;
+   dF[3,69] := -1.007839E-04;
+   dF[4,69] := 4.103273E-04;
+
+   dF[1,70] := 4.112333E-04;
+   dF[2,70] := -1.383443E-04;
+   dF[3,70] := -9.526155E-05;
+   dF[4,70] := 4.012630E-04;
+
+   dF[1,71] := 4.025829E-04;
+   dF[2,71] := -1.376322E-04;
+   dF[3,71] := -8.906122E-05;
+   dF[4,71] := 3.927691E-04;
+
+   dF[1,72] := 3.946587E-04;
+   dF[2,72] := -1.360550E-04;
+   dF[3,72] := -8.252919E-05;
+   dF[4,72] := 3.852184E-04;
+
+   dF[1,73] := 3.877826E-04;
+   dF[2,73] := -1.333477E-04;
+   dF[3,73] := -7.596623E-05;
+   dF[4,73] := 3.786846E-04;
+
+   dF[1,74] := 3.813510E-04;
+   dF[2,74] := -1.296357E-04;
+   dF[3,74] := -6.964342E-05;
+   dF[4,74] := 3.729623E-04;
+
+   dF[1,75] := 3.749722E-04;
+   dF[2,75] := -1.252845E-04;
+   dF[3,75] := -6.411295E-05;
+   dF[4,75] := 3.679537E-04;
+
+   dF[1,76] := 3.684902E-04;
+   dF[2,76] := -1.209127E-04;
+   dF[3,76] := -5.987875E-05;
+   dF[4,76] := 3.632963E-04;
+
+   dF[1,77] := 3.614576E-04;
+   dF[2,77] := -1.170606E-04;
+   dF[3,77] := -5.674366E-05;
+   dF[4,77] := 3.585423E-04;
+
+   dF[1,78] := 3.536961E-04;
+   dF[2,78] := -1.137132E-04;
+   dF[3,78] := -5.413216E-05;
+   dF[4,78] := 3.535587E-04;
+
+   dF[1,79] := 3.452844E-04;
+   dF[2,79] := -1.103175E-04;
+   dF[3,79] := -5.142754E-05;
+   dF[4,79] := 3.479905E-04;
+
+   dF[1,80] := 3.359714E-04;
+   dF[2,80] := -1.062439E-04;
+   dF[3,80] := -4.831723E-05;
+   dF[4,80] := 3.416220E-04;
+
+   dF[1,81] := 3.251478E-04;
+   dF[2,81] := -1.007920E-04;
+   dF[3,81] := -4.546066E-05;
+   dF[4,81] := 3.342194E-04;
+
+   dF[1,82] := 3.130255E-04;
+   dF[2,82] := -9.384171E-05;
+   dF[3,82] := -4.379774E-05;
+   dF[4,82] := 3.256650E-04;
+
+   dF[1,83] := 3.006836E-04;
+   dF[2,83] := -8.585225E-05;
+   dF[3,83] := -4.388396E-05;
+   dF[4,83] := 3.161236E-04;
+
+   dF[1,84] := 2.889455E-04;
+   dF[2,84] := -7.721190E-05;
+   dF[3,84] := -4.591898E-05;
+   dF[4,84] := 3.060764E-04;
+
+   dF[1,85] := 2.783889E-04;
+   dF[2,85] := -6.824276E-05;
+   dF[3,85] := -4.974662E-05;
+   dF[4,85] := 2.963275E-04;
+
+   dF[1,86] := 2.693565E-04;
+   dF[2,86] := -5.923282E-05;
+   dF[3,86] := -5.485705E-05;
+   dF[4,86] := 2.871020E-04;
+
+   dF[1,87] := 2.619612E-04;
+   dF[2,87] := -5.123293E-05;
+   dF[3,87] := -6.038492E-05;
+   dF[4,87] := 2.780197E-04;
+
+   dF[1,88] := 2.560785E-04;
+   dF[2,88] := -4.523211E-05;
+   dF[3,88] := -6.543469E-05;
+   dF[4,88] := 2.694135E-04;
+
+   dF[1,89] := 2.513367E-04;
+   dF[2,89] := -4.138638E-05;
+   dF[3,89] := -6.940981E-05;
+   dF[4,89] := 2.618356E-04;
+
+   dF[1,90] := 2.471193E-04;
+   dF[2,90] := -3.984094E-05;
+   dF[3,90] := -7.201223E-05;
+   dF[4,90] := 2.551230E-04;
+
+   dF[1,91] := 2.425686E-04;
+   dF[2,91] := -4.070541E-05;
+   dF[3,91] := -7.323757E-05;
+   dF[4,91] := 2.493090E-04;
+
+   dF[1,92] := 2.371622E-04;
+   dF[2,92] := -4.359013E-05;
+   dF[3,92] := -7.336080E-05;
+   dF[4,92] := 2.446481E-04;
+
+   dF[1,93] := 2.307364E-04;
+   dF[2,93] := -4.761676E-05;
+   dF[3,93] := -7.260648E-05;
+   dF[4,93] := 2.412473E-04;
+
+   dF[1,94] := 2.234821E-04;
+   dF[2,94] := -5.220547E-05;
+   dF[3,94] := -7.114882E-05;
+   dF[4,94] := 2.390344E-04;
+
+   dF[1,95] := 2.159505E-04;
+   dF[2,95] := -5.707267E-05;
+   dF[3,95] := -6.911214E-05;
+   dF[4,95] := 2.377606E-04;
+
+   dF[1,96] := 2.084959E-04;
+   dF[2,96] := -6.190415E-05;
+   dF[3,96] := -6.658430E-05;
+   dF[4,96] := 2.370159E-04;
+
+   dF[1,97] := 2.013012E-04;
+   dF[2,97] := -6.633670E-05;
+   dF[3,97] := -6.328656E-05;
+   dF[4,97] := 2.367625E-04;
+
+   dF[1,98] := 1.943847E-04;
+   dF[2,98] := -6.995525E-05;
+   dF[3,98] := -5.857497E-05;
+   dF[4,98] := 2.373353E-04;
+
+   dF[1,99] := 1.875492E-04;
+   dF[2,99] := -7.231069E-05;
+   dF[3,99] := -5.243174E-05;
+   dF[4,99] := 2.387494E-04;
+
+   dF[1,100] := 1.809497E-04;
+   dF[2,100] := -7.324058E-05;
+   dF[3,100] := -4.545450E-05;
+   dF[4,100] := 2.406843E-04;
+
+   dF[1,101] := 1.751372E-04;
+   dF[2,101] := -7.286309E-05;
+   dF[3,101] := -3.820090E-05;
+   dF[4,101] := 2.426440E-04;
+
+   dF[1,102] := 1.705030E-04;
+   dF[2,102] := -7.125362E-05;
+   dF[3,102] := -3.120528E-05;
+   dF[4,102] := 2.439705E-04;
+
+   dF[1,103] := 1.673038E-04;
+   dF[2,103] := -6.842885E-05;
+   dF[3,103] := -2.465148E-05;
+   dF[4,103] := 2.443737E-04;
+
+   dF[1,104] := 1.656659E-04;
+   dF[2,104] := -6.434770E-05;
+   dF[3,104] := -1.837641E-05;
+   dF[4,104] := 2.439306E-04;
+
+   dF[1,105] := 1.655478E-04;
+   dF[2,105] := -5.891791E-05;
+   dF[3,105] := -1.253024E-05;
+   dF[4,105] := 2.429226E-04;
+
+   dF[1,106] := 1.673021E-04;
+   dF[2,106] := -5.231939E-05;
+   dF[3,106] := -7.566405E-06;
+   dF[4,106] := 2.418208E-04;
+
+   dF[1,107] := 1.717155E-04;
+   dF[2,107] := -4.503019E-05;
+   dF[3,107] := -3.593255E-06;
+   dF[4,107] := 2.405503E-04;
+
+   dF[1,108] := 1.794673E-04;
+   dF[2,108] := -3.749266E-05;
+   dF[3,108] := -6.048928E-08;
+   dF[4,108] := 2.390351E-04;
+
+   dF[1,109] := 1.899767E-04;
+   dF[2,109] := -3.024738E-05;
+   dF[3,109] := 3.888709E-06;
+   dF[4,109] := 2.375614E-04;
+
+   dF[1,110] := 2.013342E-04;
+   dF[2,110] := -2.395934E-05;
+   dF[3,110] := 8.429931E-06;
+   dF[4,110] := 2.360861E-04;
+
+   dF[1,111] := 2.119912E-04;
+   dF[2,111] := -1.881860E-05;
+   dF[3,111] := 1.309350E-05;
+   dF[4,111] := 2.342657E-04;
+
+   dF[1,112] := 2.207912E-04;
+   dF[2,112] := -1.453882E-05;
+   dF[3,112] := 1.741878E-05;
+   dF[4,112] := 2.316187E-04;
+
+   dF[1,113] := 2.264112E-04;
+   dF[2,113] := -1.080650E-05;
+   dF[3,113] := 2.126834E-05;
+   dF[4,113] := 2.280345E-04;
+
+   dF[1,114] := 2.284729E-04;
+   dF[2,114] := -7.923309E-06;
+   dF[3,114] := 2.485108E-05;
+   dF[4,114] := 2.237463E-04;
+
+   dF[1,115] := 2.274970E-04;
+   dF[2,115] := -6.812398E-06;
+   dF[3,115] := 2.806631E-05;
+   dF[4,115] := 2.191707E-04;
+
+   dF[1,116] := 2.243678E-04;
+   dF[2,116] := -7.932421E-06;
+   dF[3,116] := 3.081343E-05;
+   dF[4,116] := 2.145946E-04;
+
+   dF[1,117] := 2.203535E-04;
+   dF[2,117] := -1.129003E-05;
+   dF[3,117] := 3.331425E-05;
+   dF[4,117] := 2.098123E-04;
+
+   dF[1,118] := 2.165450E-04;
+   dF[2,118] := -1.687071E-05;
+   dF[3,118] := 3.610207E-05;
+   dF[4,118] := 2.050001E-04;
+
+   dF[1,119] := 2.132624E-04;
+   dF[2,119] := -2.432252E-05;
+   dF[3,119] := 3.935654E-05;
+   dF[4,119] := 2.005744E-04;
+
+   dF[1,120] := 2.100393E-04;
+   dF[2,120] := -3.296916E-05;
+   dF[3,120] := 4.257485E-05;
+   dF[4,120] := 1.966681E-04;
+
+   dF[1,121] := 2.067858E-04;
+   dF[2,121] := -4.166200E-05;
+   dF[3,121] := 4.524733E-05;
+   dF[4,121] := 1.933005E-04;
+
+   dF[1,122] := 2.032272E-04;
+   dF[2,122] := -4.923306E-05;
+   dF[3,122] := 4.684247E-05;
+   dF[4,122] := 1.903584E-04;
+
+   dF[1,123] := 1.989379E-04;
+   dF[2,123] := -5.526234E-05;
+   dF[3,123] := 4.745629E-05;
+   dF[4,123] := 1.877229E-04;
+
+   dF[1,124] := 1.939091E-04;
+   dF[2,124] := -5.961541E-05;
+   dF[3,124] := 4.782472E-05;
+   dF[4,124] := 1.852920E-04;
+
+   dF[1,125] := 1.884929E-04;
+   dF[2,125] := -6.243207E-05;
+   dF[3,125] := 4.834859E-05;
+   dF[4,125] := 1.831883E-04;
+
+   dF[1,126] := 1.834061E-04;
+   dF[2,126] := -6.412379E-05;
+   dF[3,126] := 4.909343E-05;
+   dF[4,126] := 1.817607E-04;
+
+   dF[1,127] := 1.791995E-04;
+   dF[2,127] := -6.506551E-05;
+   dF[3,127] := 5.009997E-05;
+   dF[4,127] := 1.812345E-04;
+
+   dF[1,128] := 1.762414E-04;
+   dF[2,128] := -6.561158E-05;
+   dF[3,128] := 5.105674E-05;
+   dF[4,128] := 1.811873E-04;
+
+   dF[1,129] := 1.747419E-04;
+   dF[2,129] := -6.607823E-05;
+   dF[3,129] := 5.162659E-05;
+   dF[4,129] := 1.810743E-04;
+
+   dF[1,130] := 1.742214E-04;
+   dF[2,130] := -6.640868E-05;
+   dF[3,130] := 5.176061E-05;
+   dF[4,130] := 1.807689E-04;
+
+   dF[1,131] := 1.740670E-04;
+   dF[2,131] := -6.649062E-05;
+   dF[3,131] := 5.170935E-05;
+   dF[4,131] := 1.805464E-04;
+
+   writeln;
+   writeln("You are going to enter in a lot of data now, so BE PATIENT.");
+   writeln;
+   Optimize;
+   writeln;
+   writeln("The optimizer has finished.");
+   writeln;
+   writeln("In a different window, open file: ~/iofiles/testOptimize.txt.");
+   writeln("Scroll to the bottom and locate the optimized set of parameters.");
+   write("After you have located them, press Enter to continue.   ");
+   readln;
+   writeln;
+   writeln("Now, create data files that can be used for plotting purposes.");
+   writeln;
+   Solve;
+   L.Close
+
+end Main.

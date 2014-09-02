@@ -1,0 +1,80 @@
+module {public} Main;
+
+   import
+      Bel.MF.Numbers as N,
+      Bel.PF.Functions as M,
+      Bel.PF.Scalars   as S,
+      Bel.PF.Tensors2  as T;
+
+   procedure Run;
+   var
+      alpha, cos, sin, l1, l2, zero : S.Scalar;
+      diag, d1, rot, r1, t1, t2 : T.Tensor;
+      n : N.Number;
+      s : string;
+   begin
+      n := 0;
+      s := "";
+      zero.Set(n);
+      writeln("Enter two eigenvalues.");
+      write("   The first eigenvalue is:  ");
+      readln(s);
+      n.Parse(s);
+      l1.Set(n);
+      write("   The second eigenvalue is: ");
+      readln(s);
+      n.Parse(s);
+      l2.Set(n);
+      writeln;
+      write("Enter an angle of rotation:  ");
+      readln(s);
+      n.Parse(s);
+      alpha.Set(n);
+      cos := M.Cos(alpha);
+      sin := M.Sin(alpha);
+      rot[1,1] := cos;
+      rot[1,2] := -sin;
+      rot[2,1] := sin;
+      rot[2,2] := cos;
+      diag[1,1] := l1;
+      diag[1,2] := zero;
+      diag[2,1] := zero;
+      diag[2,2] := l2;
+      t1 := rot.Dot(diag.DotTranspose(rot));
+      writeln;
+      writeln("The matrix we are seeking eignenvalues for is:");
+      writeln;
+      writeln("   " + t1.Typeset());
+      writeln;
+      T.SpectralDecomposition(t1, d1, r1);
+      writeln("The decomposed diagonal matrix of eigenvalues is:");
+      writeln;
+      writeln("   " + d1.Typeset());
+      writeln;
+      writeln("The supplied diagonal matrix was:");
+      writeln;
+      writeln("   " + diag.Typeset());
+      writeln;
+      writeln("The decomposed rotation matrix containing the eigenvectors is:");
+      writeln;
+      writeln("   " + r1.Typeset());
+      writeln;
+      writeln("The supplied rotation matrix was:");
+      writeln;
+      writeln("   " + rot.Typeset());
+      writeln;
+      t2 := r1.Dot(d1.DotTranspose(r1));
+      writeln("The reconstructed matrix is:");
+      writeln("   " + t2.Typeset());
+      writeln;
+      writeln("which compares to the supplied matrix:");
+      writeln;
+      writeln("   " + t1.Typeset())
+   end Run;
+
+begin
+   Run;
+   writeln;
+   writeln("Press 'Enter' to quit.");
+   readln
+end Main.

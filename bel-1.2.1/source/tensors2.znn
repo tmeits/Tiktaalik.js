@@ -1,0 +1,1321 @@
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(*       BBBB      EEEEE     L         The                                    *)
+(*       B   B     E         L           BIO                                  *)
+(*       BBBB      EEE       L           ENGINEERING                          *)
+(*       B    B    E         L           LABORATORY                           *)
+(*       BBBBB     EEEEEE    LLLLLL        @ Saginaw Valley State University  *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Copyright 2008-2010, Alan D. Freed                                         *)
+(*                                                                            *)
+(* This file is part of the BEL suite of .NET/mono libraries.                 *)
+(*                                                                            *)
+(* BEL is a free software: you can redistribute it and/or modify it under the *)
+(* terms of the GNU Lesser General Public License as published by the Free    *)
+(* Software Foundation, either version 3 of the License, or (at your option)  *)
+(* any later version.                                                         *)
+(*                                                                            *)
+(* BEL is distributed in the hope that it will be useful, but WITHOUT ANY     *)
+(* WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS  *)
+(* FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License for   *)
+(* more details.                                                              *)
+(*                                                                            *)
+(* You should have received a copy of the GNU Lesser General Public License   *)
+(* along with BEL.  If not, see <http://www.gnu.org/licenses/>.               *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Defines a tensor in 2-space; specifically, a 2x2 array of scalars          *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* The row and column indexers go from 1..2, not from 0..1 as in Zonnon and C *)
+(* IMPORTANT: When using index notation to assign values to a tensor, make    *)
+(*            sure that you import Bel.PF.Scalars so that any 'overloaded'    *)
+(*            assignments, like t[i,j] := s, can take place behind the scene. *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* In-plane tensor fields have zero valued 13, 23, 31, 32 and 33 components   *)
+(*       | T11  T12   0  |                                                    *)
+(*   T = | T21  T22   0  |                                                    *)
+(*       |  0    0    0  |                                                    *)
+(* and are therefore represented internally as a four-element array, viz.,    *)
+(*   T = {T11, T12, T21, T22}^T                                               *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Constant    : I             - a dimensionless diagonal tensor of 1s        *)
+(* Object      : Tensor        - an 2x2 array of scalars                      *)
+(*    methods  : Initialize;   - implements Bel.Object.Initialize             *)
+(*             : Nullify       - implements Bel.Object.Nullify                *)
+(*             : Clone         - implements Bel.Object.Clone                  *)
+(*             : Load          - implements Bel.Object.Load                   *)
+(*             : Store         - implements Bel.Object.Store                  *)
+(*             : Get           - implements [].Get                            *)
+(*             : Set           - implements [].Set                            *)
+(*             : Negative      - implements Bel.Field.Negative                *)
+(*             : Add           - implements Bel.Field.Add                     *)
+(*             : Subtract      - implements Bel.Field.Subtract                *)
+(*             : Multiply      - implements Bel.Field.Multiply                *)
+(*             : Divide        - implements Bel.Field.Divide                  *)
+(*             : Parse         - converts a Voigt vector string into a tensor *)
+(*             : Typeset       - converts a tensor into a Voigt vector string *)
+(*             : TypesetRow    - converts specified row in tensor into string *)
+(*             : GetUnits      - returns the units part of a tensor field     *)
+(*             : SetUnits      - assigns the units part of a tensor field     *)
+(*             : GetArray      - returns internal Voigt array, less its units *)
+(*             : SetArray      - assigns internal Voigt array, less its units *)
+(*             : GetMatrix     - returns the internal matrix, less its units  *)
+(*             : SetMatrix     - assigns the internal matrix, less its units  *)
+(*             : IsVoid        - boolean check for absense of units           *)
+(*             : Equals        - checks two tensors for equality              *)
+(*             : Transpose     - returns the tensor transpose                 *)
+(*             : Inverse       - returns the tensor inverse, if it exists     *)
+(*             : Dot           - returns T_{ij} = L_{ik} R_{kj}               *)
+(*             : DotTranspose  - returns T_{ij} = L_{ik} R_{jk}               *)
+(*             : TransposeDot  - returns T_{ij} = L_{ki} R_{kj}               *)
+(*             : Contract           - returns T_{ij} = L_{ik} R_k             *)
+(*             : TransposeContract  - returns T_{ij} = L_{ki} R_k             *)
+(*             : DoubleDot          - returns X = L_{ij} R_{ij}               *)
+(*             : TransposeDoubleDot - returns X = L_{ji} R_{ij}               *)
+(* Operators   : :=            - assignment                                   *)
+(*             : -             - uniary  operator                             *)
+(*             : = | #         - logical operators                            *)
+(*             : + | - | * | / - binary  operators                            *)
+(* Functions   : Norm            - returns the Frobenius norm                 *)
+(*             : FirstInvariant  - returns the first invariant of the tensor  *)
+(*             : SecondInvariant - returns the second invariant of the tensor *)
+(*             : Trace           - returns the trace of a tensor              *)
+(*             : Determinant     - returns the determinant of a tensor        *)
+(*             : SymmetricPart   - returns T_{ij} = (M_{ij} + M_{ji})/2       *)
+(*             : SkewPart        - returns T_{ij} = (M_{ij} - M_{ji})/2       *)
+(*             : Eigenvalues     - supplies lambda1 and lambda2               *)
+(*             : SpectralDecomposition - T_{ij} = Q_{ik}Lambda{kl}Q_{jl}      *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+
+
+module {public} Bel.PF.Tensors2;
+
+   import
+      System.IO.BinaryReader as BinaryReader,
+      System.IO.BinaryWriter as BinaryWriter,
+      System.Byte   as Card8,   (* core type of  cardinal{8}  *)
+      System.UInt16 as Card16,  (* core type of  cardinal{16} *)
+      System.UInt32 as Card32,  (* core type of  cardinal{32} *)
+      System.UInt64 as Card64,  (* core type of  cardinal{64} *)
+      System.SByte  as Int8,    (* core type of  integer{8}   *)
+      System.Int16  as Int16,   (* core type of  integer{16}  *)
+      System.Int32  as Int32,   (* core type of  integer{32}  *)
+      System.Int64  as Int64,   (* core type of  integer{64}  *)
+      System.Single as Real32,  (* core type of  real{32}     *)
+      System.Double as Real64,  (* core type of  real{64}     *)
+      Bel.IO.Log as L,
+      Bel.MF.Numbers  as N,
+      Bel.MF.Arrays   as A,
+      Bel.MF.Matrices as M,
+      Bel.MATH.Functions as Fn,
+      Bel.PF.Units    as U,
+      Bel.PF.Scalars  as S,
+      Bel.PF.Vectors2 as V,
+      Bel.Object as Object,
+      Bel.Field  as Field;
+
+   var {private}
+      zero, one, two : N.Number;
+      zeroScalar, oneScalar, twoScalar : S.Scalar;
+
+   var {public, immutable}
+      I : Tensor;
+
+   type {private}
+      CharArray = array * of char;
+
+   type {public, value} Tensor = object implements [], Field
+
+      var {private}
+         a : A.Array;
+         u : U.Si;
+
+      procedure {public} Initialize
+         implements Object.Initialize;
+      begin
+         a.Create(4);
+         u.Initialize
+      end Initialize;
+
+      procedure {public} Nullify
+         implements Object.Nullify;
+      begin
+         a.Nullify;
+         u.Nullify
+      end Nullify;
+
+      procedure {public} Clone () : object{Object}
+         implements Object.Clone;
+      var
+         o : object{Object};
+         t : Tensor;
+      begin
+         t.a := A.Array(a.Clone());
+         t.u := U.Si(u.Clone());
+         o := Object(t);
+         return o
+      end Clone;
+
+      procedure {public} Load (br : BinaryReader)
+         implements Object.Load;
+      begin
+         u.Load(br);
+         a.Load(br)
+      end Load;
+
+      procedure {public} Store (bw : BinaryWriter)
+         implements Object.Store;
+      begin
+         u.Store(bw);
+         a.Store(bw)
+      end Store;
+
+      procedure {public} Get (row, col : integer) : S.Scalar
+         implements [].Get;
+      var
+         s : S.Scalar;
+      begin
+         s.SetUnits(u);
+         if row = 1 then
+            if col = 1 then
+               s.Set(a[1])
+            elsif col = 2 then
+               s.Set(a[2])
+            else
+               L.ErrorMessage(310,-1, "Bel.CCM.Tensors2.Tensor.Get")
+            end
+         elsif row = 2 then
+            if col = 1 then
+               s.Set(a[3])
+            elsif col = 2 then
+               s.Set(a[4])
+            else
+               L.ErrorMessage(310,-1, "Bel.CCM.Tensors2.Tensor.Get")
+            end
+         else
+            L.ErrorMessage(310,-1, "Bel.CCM.Tensors2.Tensor.Get")
+         end;
+         return s
+      end Get;
+
+      procedure {public} Set (row, col : integer; s : S.Scalar)
+         implements [].Set;
+      begin
+         if u = s.GetUnits() then
+            if row = 1 then
+               if col = 1 then
+                  a[1] := s.Get()
+               elsif col = 2 then
+                  a[2] := s.Get()
+               else
+                  L.ErrorMessage(310,-1, "Bel.CCM.Tensors2.Tensor.Set")
+               end
+            elsif row = 2 then
+               if col = 1 then
+                  a[3] := s.Get()
+               elsif col = 2 then
+                  a[4] := s.Get()
+               else
+                  L.ErrorMessage(310,-1, "Bel.CCM.Tensors2.Tensor.Set")
+               end
+            else
+               L.ErrorMessage(310,-1, "Bel.CCM.Tensors2.Tensor.Set")
+            end
+         else
+            L.ErrorMessage(300,-1, "Bel.CCM.Tensors2.Tensor.Set")
+         end
+      end Set;
+
+      procedure {public} Negative () : object{Field}
+         implements Field.Negative;
+      var
+         g : object{Field};
+         t : Tensor;
+      begin
+         t.u := u;
+         t.a := -a;
+         g := Field(t);
+         return g
+      end Negative;
+
+      procedure {public} Add (f : object{Field}) : object{Field}
+         implements Field.Add;
+      var
+         g : object{Field};
+         m : M.Matrix;
+         r, t : Tensor;
+         v : A.Array;
+      begin
+         m.Initialize;
+         t.Initialize;
+         if f is Tensor then
+            r := Tensor(f);
+            if u = r.u then
+               t.u := u;
+               t.a := a + r.a
+            else
+               L.ErrorMessage(301,-1, "Bel.CCM.Tensors2.Tensor.Add")
+            end
+         elsif f is A.Array then
+            if IsVoid() then
+               v := A.Array(f);
+               if v.Length() = 4 then
+                  t.a := a + v
+               else
+                  L.ErrorMessage(310,-1, "Bel.CCM.Tensors2.Tensor.Add")
+               end
+            else
+               L.ErrorMessage(301,-1, "Bel.CCM.Tensors2.Tensor.Add")
+            end
+         elsif f is M.Matrix then
+            if IsVoid() then
+               m := M.Matrix(f);
+               if (m.Rows() = 2) & (m.Columns() = 2) then
+                  t.a[1] := a[1] + m[1,1];
+                  t.a[2] := a[2] + m[1,2];
+                  t.a[3] := a[3] + m[2,1];
+                  t.a[4] := a[4] + m[2,2]
+               else
+                  L.ErrorMessage(310,-1, "Bel.CCM.Tensors2.Tensor.Add")
+               end
+            else
+               L.ErrorMessage(301,-1, "Bel.CCM.Tensors2.Tensor.Add")
+            end
+         else
+            L.ErrorMessage(501,-1, "Bel.CCM.Tensors2.Tensor.Add")
+         end;
+         g := Field(t);
+         return g
+      end Add;
+
+      procedure {public} Subtract (f : object{Field}) : object{Field}
+         implements Field.Subtract;
+      var
+         g : object{Field};
+         m : M.Matrix;
+         r, t : Tensor;
+         v : A.Array;
+      begin
+         m.Initialize;
+         t.Initialize;
+         if f is Tensor then
+            r := Tensor(f);
+            if u = r.u then
+               t.u := u;
+               t.a := a - r.a
+            else
+               L.ErrorMessage(301,-1, "Bel.CCM.Tensors2.Tensor.Subtract")
+            end
+         elsif f is A.Array then
+            if IsVoid() then
+               v := A.Array(f);
+               if v.Length() = 4 then
+                  t.a := a - v
+               else
+                  L.ErrorMessage(310,-1, "Bel.CCM.Tensors2.Tensor.Subtract")
+               end
+            else
+               L.ErrorMessage(301,-1, "Bel.CCM.Tensors2.Tensor.Subtract")
+            end
+         elsif f is M.Matrix then
+            if IsVoid() then
+               m := M.Matrix(f);
+               if (m.Rows() = 2) & (m.Columns() = 2) then
+                  t.a[1] := a[1] - m[1,1];
+                  t.a[2] := a[2] - m[1,2];
+                  t.a[3] := a[3] - m[2,1];
+                  t.a[4] := a[4] - m[2,2]
+               else
+                  L.ErrorMessage(310,-1, "Bel.CCM.Tensors2.Tensor.Subtract")
+               end;
+               m.Nullify
+            else
+               L.ErrorMessage(301,-1, "Bel.CCM.Tensors2.Tensor.Subtract")
+            end
+         else
+            L.ErrorMessage(501,-1, "Bel.CCM.Tensors2.Tensor.Subtract")
+         end;
+         g := Field(t);
+         return g
+      end Subtract;
+
+      procedure {public} Multiply (f : object{Field}) : object{Field}
+         implements Field.Multiply;
+      var
+         g : object{Field};
+         n : N.Number;
+         s : S.Scalar;
+         t : Tensor;
+      begin
+         t.Initialize;
+         if f is S.Scalar then
+            s := S.Scalar(f);
+            n := s.Get();
+            t.u := u + s.GetUnits();
+            t.a := n*a
+         elsif f is N.Number then
+            n := N.Number(f);
+            t.u := u;
+            t.a := n*a
+         else
+            L.ErrorMessage(501,-1, "Bel.CCM.Tensors2.Tensor.Multiply")
+         end;
+         g := Field(t);
+         return g
+      end Multiply;
+
+      procedure {public} Divide (f : object{Field}) : object{Field}
+         implements Field.Divide;
+      var
+         g : object{Field};
+         n : N.Number;
+         s : S.Scalar;
+         t : Tensor;
+      begin
+         t.Initialize;
+         if f is S.Scalar then
+            s := S.Scalar(f);
+            n := s.Get();
+            t.u := u - s.GetUnits();
+            t.a := a/n
+         elsif f is N.Number then
+            n := N.Number(f);
+            t.u := u;
+            t.a := a/n
+         else
+            L.ErrorMessage(501,-1, "Bel.CCM.Tensors2.Tensor.Divide")
+         end;
+         g := Field(t);
+         return g
+      end Divide;
+
+      (* Additional methods not defined via an iterface *)
+
+      procedure {public} Parse (input : string);
+      var
+         b, d : CharArray;
+         c : array 36 of char;
+         i, j, k : integer;
+         n : N.Number;
+         y : string;
+      begin
+         d := new CharArray(len(input)+2);
+         copy(input, d);
+         (* pass over any leading white space and leading parenthesis *)
+         j := 0;
+         while (d[j] = " ") or (d[j] = "[") do
+            inc(j)
+         end;
+         (* read the first contiguous array of characters *)
+         i := 0;
+         repeat
+            c[i] := d[j];
+            inc(i);
+            inc(j);
+         until d[j] = " ";
+         (* copy this array, the first number, into a string and parse it *)
+         b := new CharArray(i+1);
+         for k := 0 to i-1 do
+            b[k] := c[k]
+         end;
+         copy(b, y);
+         n.Parse(y);
+         a[1] := n;
+         y := "";
+         (* pass over any leading white space *)
+         while d[j] = " " do
+            inc(j)
+         end;
+         (* read the second contiguous array of characters *)
+         i := 0;
+         repeat
+            c[i] := d[j];
+            inc(i);
+            inc(j);
+         until d[j] = " ";
+         (* copy this array, the second number, into a string and parse it *)
+         b := new CharArray(i+1);
+         for k := 0 to i-1 do
+            b[k] := c[k]
+         end;
+         copy(b, y);
+         n.Parse(y);
+         a[2] := n;
+         y := "";
+         (* pass over any leading white space *)
+         while d[j] = " " do
+            inc(j)
+         end;
+         (* read the third contiguous array of characters *)
+         i := 0;
+         repeat
+            c[i] := d[j];
+            inc(i);
+            inc(j);
+         until d[j] = " ";
+         (* copy this array, the third number, into a string and parse it *)
+         b := new CharArray(i+1);
+         for k := 0 to i-1 do
+            b[k] := c[k]
+         end;
+         copy(b, y);
+         n.Parse(y);
+         a[3] := n;
+         y := "";
+         (* pass over any leading white space *)
+         while d[j] = " " do
+            inc(j)
+         end;
+         (* read the fourth contiguous array of characters *)
+         i := 0;
+         repeat
+            c[i] := d[j];
+            inc(i);
+            inc(j);
+         until (d[j] = " ") or (d[j] = "]");
+         (* copy this array, the fourth number, into a string and parse it *)
+         b := new CharArray(i+1);
+         for k := 0 to i-1 do
+            b[k] := c[k]
+         end;
+         copy(b, y);
+         n.Parse(y);
+         a[4] := n;
+         y := "";
+         (* move onto the units *)
+         while (d[j] = " ") or (d[j] = "]") do
+            inc(j)
+         end;
+         (* read the final string of contiguous array of characters *)
+         i := 0;
+         repeat
+            c[i] := d[j];
+            inc(i);
+            inc(j);
+         until (d[j] = " ") or (j = len(input));
+         (* copy this array, the units, into a string and parse it *)
+         b := new CharArray(i+1);
+         for k := 0 to i-1 do
+            b[k] := c[k]
+         end;
+         copy(b, y);
+         u.Parse(y)
+      end Parse;
+
+      (* write the tensor out in Voigt notation *)
+      procedure {public} Typeset () : string;
+      var
+         i : integer;
+         r : N.Number;
+         s : string;
+      begin
+         r := a[1];
+         s := "[" + r.ToString(7);
+         for i := len(s) to 18 do
+            s := s + " "
+         end;
+         r := a[2];
+         s := s + r.ToString(7);
+         for i := len(s) to 35 do
+            s := s + " "
+         end;
+         r := a[3];
+         s := s + r.ToString(7);
+         for i := len(s) to 52 do
+            s := s + " "
+         end;
+         r := a[4];
+         s := s + r.ToString(7);
+         for i := len(s) to 67 do
+            s := s + " "
+         end;
+         s := s + "] ";
+         s := s + u.Typeset();
+         return s
+      end Typeset;
+
+      procedure {public} TypesetRow (row : integer) : string;
+      var
+         i : integer;
+         r : N.Number;
+         s : string;
+      begin
+         s := "";
+         if row = 1 then
+            r := a[1];
+            s := "/" + r.ToString(7);
+            for i := len(s) to 18 do
+               s := s + " "
+            end;
+            r := a[2];
+            s := s + r.ToString(7);
+            for i := len(s) to 33 do
+               s := s + " "
+            end;
+            s := s + "\ "
+         elsif row = 2 then
+            r := a[3];
+            s := "\" + r.ToString(7);
+            for i := len(s) to 18 do
+               s := s + " "
+            end;
+            r := a[4];
+            s := s + r.ToString(7);
+            for i := len(s) to 33 do
+               s := s + " "
+            end;
+            s := s + "/ ";
+            s := s + u.Typeset()
+         else
+            L.ErrorMessage(310,-1, "Bel.CCM.Tensors2.Tensor.TypesetRow")
+         end;
+         return s
+      end TypesetRow;
+
+      procedure {public} GetUnits () : U.Si;
+      var
+         si : U.Si;
+      begin
+         si := u;
+         return si
+      end GetUnits;
+
+      procedure {public} SetUnits (si : U.Si);
+      begin
+         u := si
+      end SetUnits;
+
+      procedure {public} GetArray () : A.Array;
+      var
+         arr : A.Array;
+      begin
+		   arr := a;
+         return arr
+      end GetArray;
+
+      procedure {public} SetArray (arr : A.Array);
+      var
+         i : integer;
+      begin
+         if arr.Length() = 4 then
+			   a := arr
+         else
+            L.ErrorMessage(310,-1, "Bel.CCM.Tensors2.Tensor.SetArray")
+         end
+      end SetArray;
+
+      procedure {public} GetMatrix () : M.Matrix;
+      var
+         m : M.Matrix;
+      begin
+         m.Create(2,2);
+         m[1,1] := a[1];
+         m[1,2] := a[2];
+         m[2,1] := a[3];
+         m[2,2] := a[4];
+         return m
+      end GetMatrix;
+
+      procedure {public} SetMatrix (m : M.Matrix);
+      begin
+         if (m.Rows() = 2) & (m.Columns() = 2) then
+            a[1] := m[1,1];
+            a[2] := m[1,2];
+            a[3] := m[2,1];
+            a[4] := m[2,2]
+         else
+            L.ErrorMessage(310,-1, "Bel.CCM.Tensors2.Tensor.SetMatrix")
+         end
+      end SetMatrix;
+
+      procedure {public} IsVoid () : boolean;
+      begin
+         return u.IsVoid()
+      end IsVoid;
+
+      procedure {public} Equals (t : Tensor) : boolean;
+      begin
+         return ((u = t.u) & (a = t.a))
+      end Equals;
+
+      procedure {public} Transpose () : Tensor;
+      var
+         tp : Tensor;
+      begin
+         tp.u := u;
+         tp.a[1] := a[1];
+         tp.a[2] := a[3];
+         tp.a[3] := a[2];
+         tp.a[4] := a[4];
+         return tp
+      end Transpose;
+
+      procedure {public} Inverse () : Tensor;
+      var
+         det, n : N.Number;
+         inv : Tensor;
+         si : U.Si;
+      begin
+         si.Initialize;
+         inv.u := si - u;
+         det := a[1]*a[4] - a[3]*a[2];
+         if Fn.Abs(det) > zero then
+            (* apply Cramer's rule *)
+            inv.a[1] := a[4]/det;
+            n := a[2]/det;
+            inv.a[2] := -n;
+            n := a[3]/det;
+            inv.a[3] := -n;
+            inv.a[4] := a[1]/det
+         else
+            L.ErrorMessage(323,-1, "Bel.CCM.Tensors2.Tensor.Inverse")
+         end;
+         return inv
+      end Inverse;
+
+      (* L.Dot(R) returns  T_{i,j} := L_{i,k} R_{k,j} *)
+      procedure {public} Dot (t : Tensor) : Tensor;
+      var
+         ten : Tensor;
+      begin
+         ten.u := u + t.u;
+         ten.a[1] := a[1]*t.a[1] + a[2]*t.a[3];
+         ten.a[2] := a[1]*t.a[2] + a[2]*t.a[4];
+         ten.a[3] := a[3]*t.a[1] + a[4]*t.a[3];
+         ten.a[4] := a[3]*t.a[2] + a[4]*t.a[4];
+         return ten
+      end Dot;
+
+      (* L.DotTranspose(R) returns  T_{i,j} := L_{i,k} R_{j,k} *)
+      procedure {public} DotTranspose (t : Tensor) : Tensor;
+      var
+         ten : Tensor;
+      begin
+         ten.u := u + t.u;
+         ten.a[1] := a[1]*t.a[1] + a[2]*t.a[2];
+         ten.a[2] := a[1]*t.a[3] + a[2]*t.a[4];
+         ten.a[3] := a[3]*t.a[1] + a[4]*t.a[2];
+         ten.a[4] := a[3]*t.a[3] + a[4]*t.a[4];
+         return ten
+      end DotTranspose;
+
+      (* L.TransposeDot(R) returns  T_{i,j} := L_{k,i} R_{k,j} *)
+      procedure {public} TransposeDot (t : Tensor) : Tensor;
+      var
+         ten : Tensor;
+      begin
+          ten.u := u + t.u;
+          ten.a[1] := a[1]*t.a[1] + a[3]*t.a[3];
+          ten.a[2] := a[1]*t.a[2] + a[3]*t.a[4];
+          ten.a[3] := a[2]*t.a[1] + a[4]*t.a[3];
+          ten.a[4] := a[2]*t.a[2] + a[4]*t.a[4];
+         return ten
+      end TransposeDot;
+
+      (* L.Contract(R) returns  V_i := L_{i,k} R_k *)
+      procedure {public} Contract (v : V.Vector) : V.Vector;
+      var
+         arr : A.Array;
+         v1, v2 : N.Number;
+         vec : V.Vector;
+         vs : S.Scalar;
+      begin
+         vs := v[1];
+         v1 := vs.Get();
+         vs := v[2];
+         v2 := vs.Get();
+         arr.Create(2);
+         arr[1] := a[1]*v1 + a[2]*v2;
+         arr[2] := a[3]*v1 + a[4]*v2;
+         vec.SetArray(arr);
+         vec.SetUnits(u + v.GetUnits());
+         return vec
+      end Contract;
+
+      (* L.TransposeContract(R) returns  V_i := L_{k,i} R_k *)
+      procedure {public} TransposeContract (v : V.Vector) : V.Vector;
+      var
+         arr : A.Array;
+         v1, v2 : N.Number;
+         vec : V.Vector;
+         vs : S.Scalar;
+      begin
+         vs := v[1];
+         v1 := vs.Get();
+         vs := v[2];
+         v2 := vs.Get();
+         arr.Create(2);
+         arr[1] := a[1]*v1 + a[3]*v2;
+         arr[2] := a[2]*v1 + a[4]*v2;
+         vec.SetArray(arr);
+         vec.SetUnits(u + v.GetUnits());
+         return vec
+      end TransposeContract;
+
+      (* L.DoubleDot(R) returns  X := L_{ij} R_{ji} *)
+      procedure {public} DoubleDot (t : Tensor) : S.Scalar;
+      var
+         s : S.Scalar;
+         sum : N.Number;
+      begin
+         sum := a[1]*t.a[1] + a[2]*t.a[3] + a[3]*t.a[2] + a[4]*t.a[4];
+         s.Set(sum);
+         s.SetUnits(u + t.u);
+         return s
+      end DoubleDot;
+
+      (* L.TransposeDoubleDot(R) returns  X := L_{ij} R_{ij} *)
+      procedure {public} TransposeDoubleDot (t : Tensor) : S.Scalar;
+      var
+         s : S.Scalar;
+         sum : N.Number;
+      begin
+         sum := a[1]*t.a[1] + a[2]*t.a[2] + a[3]*t.a[3] + a[4]*t.a[4];
+         s.Set(sum);
+         s.SetUnits(u + t.u);
+         return s
+      end TransposeDoubleDot;
+
+   begin
+      Initialize
+   end Tensor;
+
+
+   (* OVERLOADED OPERATORS *)
+
+   operator {public} ':=' (var l : Tensor; r : Tensor);
+   begin
+      l.SetUnits(r.GetUnits());
+      l.SetArray(r.GetArray())
+   end ':=';
+
+   operator {public} ':=' (var l : Tensor; r : M.Matrix);
+   begin
+      if (r.Rows() = 2) & (r.Columns() = 2) then
+         l.SetMatrix(r);
+         l.SetUnits(U.Dimensionless)
+      else
+         L.ErrorMessage(310,-1, "Bel.PF.Tensors2.':='")
+      end
+   end ':=';
+
+   (* assignments are from Voigt notation arrays *)
+   operator {public} ':=' (var l : Tensor; r : A.Array);
+   begin
+      if r.Length() = 4 then
+         l.SetArray(r);
+         l.SetUnits(U.Dimensionless)
+      else
+         L.ErrorMessage(210,-1, "Bel.PF.Tensors2.':='")
+      end
+   end ':=';
+
+   (* places wrappers around their associated tensor methods *)
+
+   operator {public} '-' (t : Tensor) : Tensor;
+   begin
+      return Tensor(t.Negative())
+   end '-';
+
+   (* logic operators *)
+
+   operator {public} '=' (l, r : Tensor) : boolean;
+   begin
+      return l.Equals(r)
+   end '=';
+
+   operator {public} '=' (l : Tensor; r : M.Matrix) : boolean;
+   begin
+      if (r.Rows() = 2) & (r.Columns() = 2) then
+         if l.IsVoid() then
+            return (r = l.GetMatrix())
+         else
+            return false
+         end
+      else
+         return false
+      end
+   end '=';
+
+   operator {public} '=' (l : Tensor; r : A.Array) : boolean;
+   begin
+      if r.Length() = 4 then
+         if l.IsVoid() then
+            return (r = l.GetArray())
+         else
+            return false
+         end
+      else
+         return false
+      end
+   end '=';
+
+   operator {public} '=' (l : M.Matrix; r : Tensor) : boolean;
+   begin
+      if (l.Rows() = 2) & (l.Columns() = 2) then
+         if r.IsVoid() then
+            return (l = r.GetMatrix())
+         else
+            return false
+         end
+      else
+         return false
+      end
+   end '=';
+
+   operator {public} '=' (l : A.Array; r : Tensor) : boolean;
+   begin
+      if l.Length() = 4 then
+         if r.IsVoid() then
+            return (l = r.GetArray())
+         else
+            return false
+         end
+      else
+         return false
+      end
+   end '=';
+
+   operator {public} '#' (l, r : Tensor) : boolean;
+   begin
+      return ~l.Equals(r)
+   end '#';
+
+   operator {public} '#' (l : Tensor; r : M.Matrix) : boolean;
+   begin
+      if (r.Rows() = 2) & (r.Columns() = 2) then
+         if l.IsVoid() then
+            return (r # l.GetMatrix())
+         else
+            return true
+         end
+      else
+         return true
+      end
+   end '#';
+
+   operator {public} '#' (l : Tensor; r : A.Array) : boolean;
+   begin
+      if r.Length() = 4 then
+         if l.IsVoid() then
+            return (r # l.GetArray())
+         else
+            return true
+         end
+      else
+         return true
+      end
+   end '#';
+
+   operator {public} '#' (l : M.Matrix; r : Tensor) : boolean;
+   begin
+      if (l.Rows() = 2) & (l.Columns() = 2) then
+         if r.IsVoid() then
+            return (l # r.GetMatrix())
+         else
+            return true
+         end
+      else
+         return true
+      end
+   end '#';
+
+   operator {public} '#' (l : A.Array; r : Tensor) : boolean;
+   begin
+      if l.Length() = 4 then
+         if r.IsVoid() then
+            return (l # r.GetArray())
+         else
+            return true
+         end
+      else
+         return true
+      end
+   end '#';
+
+   (* arithemtic operators *)
+
+   operator {public} '+' (l, r : Tensor) : Tensor;
+   begin
+      return Tensor(l.Add(r))
+   end '+';
+
+   operator {public} '+' (l : Tensor; r : M.Matrix) : Tensor;
+   begin
+      return Tensor(l.Add(r))
+   end '+';
+
+   operator {public} '+' (l : Tensor; r : A.Array) : Tensor;
+   begin
+      return Tensor(l.Add(r))
+   end '+';
+
+   operator {public} '+' (l : M.Matrix; r : Tensor) : Tensor;
+   begin
+      return Tensor(r.Add(l))
+   end '+';
+
+   operator {public} '+' (l : A.Array; r : Tensor) : Tensor;
+   begin
+      return Tensor(r.Add(l))
+   end '+';
+
+   operator {public} '-' (l, r : Tensor) : Tensor;
+   begin
+      return Tensor(l.Subtract(r))
+   end '-';
+
+   operator {public} '-' (l : Tensor; r : M.Matrix) : Tensor;
+   begin
+      return Tensor(l.Subtract(r))
+   end '-';
+
+   operator {public} '-' (l : Tensor; r : A.Array) : Tensor;
+   begin
+      return Tensor(l.Subtract(r))
+   end '-';
+
+   operator {public} '-' (l : M.Matrix; r : Tensor) : Tensor;
+   var
+      t : Tensor;
+   begin
+      t := Tensor(r.Subtract(l));
+      return Tensor(t.Negative())
+   end '-';
+
+   operator {public} '-' (l : A.Array; r : Tensor) : Tensor;
+   var
+      t : Tensor;
+   begin
+      t := Tensor(r.Subtract(l));
+      return Tensor(t.Negative())
+   end '-';
+
+   operator {public} '*' (l : S.Scalar; r : Tensor) : Tensor;
+   begin
+      return Tensor(r.Multiply(l))
+   end '*';
+
+   operator {public} '*' (l : N.Number; r : Tensor) : Tensor;
+   begin
+      return Tensor(r.Multiply(l))
+   end '*';
+
+   operator {public} '*' (l : Card8; r : Tensor) : Tensor;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Tensor(r.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Card16; r : Tensor) : Tensor;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Tensor(r.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Card32; r : Tensor) : Tensor;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Tensor(r.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Card64; r : Tensor) : Tensor;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Tensor(r.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Int8; r : Tensor) : Tensor;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Tensor(r.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Int16; r : Tensor) : Tensor;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Tensor(r.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Int32; r : Tensor) : Tensor;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Tensor(r.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Int64; r : Tensor) : Tensor;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Tensor(r.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Real32; r : Tensor) : Tensor;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Tensor(r.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Real64; r : Tensor) : Tensor;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Tensor(r.Multiply(n))
+   end '*';
+
+   operator {public} '/' (l : Tensor; r : S.Scalar) : Tensor;
+   begin
+      return Tensor(l.Divide(r))
+   end '/';
+
+   operator {public} '/' (l : Tensor; r : N.Number) : Tensor;
+   begin
+      return Tensor(l.Divide(r))
+   end '/';
+
+   operator {public} '/' (l : Tensor; r : Card8) : Tensor;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Tensor(l.Divide(n))
+   end '/';
+
+   operator {public} '/' (l : Tensor; r : Card16) : Tensor;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Tensor(l.Divide(n))
+   end '/';
+
+   operator {public} '/' (l : Tensor; r : Card32) : Tensor;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Tensor(l.Divide(n))
+   end '/';
+
+   operator {public} '/' (l : Tensor; r : Card64) : Tensor;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Tensor(l.Divide(n))
+   end '/';
+
+   operator {public} '/' (l : Tensor; r : Int8) : Tensor;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Tensor(l.Divide(n))
+   end '/';
+
+   operator {public} '/' (l : Tensor; r : Int16) : Tensor;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Tensor(l.Divide(n))
+   end '/';
+
+   operator {public} '/' (l : Tensor; r : Int32) : Tensor;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Tensor(l.Divide(n))
+   end '/';
+
+   operator {public} '/' (l : Tensor; r : Int64) : Tensor;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Tensor(l.Divide(n))
+   end '/';
+
+   operator {public} '/' (l : Tensor; r : Real32) : Tensor;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Tensor(l.Divide(n))
+   end '/';
+
+   operator {public} '/' (l : Tensor; r : Real64) : Tensor;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Tensor(l.Divide(n))
+   end '/';
+
+   (* tensor functions and procedures *)
+
+   (* This is the Frobenius norm *)
+   procedure {public} Norm (t : Tensor) : S.Scalar;
+   var
+      s : S.Scalar;
+   begin
+      s.Set(A.TwoNorm(t.GetArray()));
+      s.SetUnits(t.GetUnits());
+      return s
+   end Norm;
+
+   procedure {public} FirstInvariant (t : Tensor) : S.Scalar;
+   var
+      s : S.Scalar;
+   begin
+      s := t[1,1] + t[2,2];
+      return s
+   end FirstInvariant;
+
+   procedure {public} SecondInvariant (t : Tensor) : S.Scalar;
+   var
+      s : S.Scalar;
+   begin
+      s := t[1,1]*t[2,2] - t[1,2]*t[2,1];
+      return s
+   end SecondInvariant;
+
+   procedure {public} Trace (t : Tensor) : S.Scalar;
+   begin
+      return FirstInvariant(t)
+   end Trace;
+
+   procedure {public} Determinant (t : Tensor) : S.Scalar;
+   begin
+      return SecondInvariant(t)
+   end Determinant;
+
+   procedure {public} SymmetricPart (t : Tensor) : Tensor;
+   var
+      ts : Tensor;
+   begin
+      ts.SetUnits(t.GetUnits());
+      ts[1,1] := t[1,1];
+      ts[1,2] := (t[1,2] + t[2,1])/twoScalar;
+      ts[2,1] := ts[1,2];
+      ts[2,2] := t[2,2];
+      return ts
+   end SymmetricPart;
+
+   procedure {public} SkewPart (t : Tensor) : Tensor;
+   var
+      ts : Tensor;
+   begin
+      ts.SetUnits(t.GetUnits());
+      ts[1,2] := (t[1,2] - t[2,1])/twoScalar;
+      ts[2,1] := (t[2,1] - t[1,2])/twoScalar;
+      return ts
+   end SkewPart;
+
+   procedure {public} Eigenvalues (t : Tensor; var lambda1, lambda2 : S.Scalar);
+   var
+      diff, mean, s : S.Scalar;
+      n : N.Number;
+   begin
+      lambda1.SetUnits(t.GetUnits());
+      lambda2.SetUnits(t.GetUnits());
+      s := t[1,1] - t[2,2];
+      s := s*s + 4*t[1,2]*t[2,1];
+      n := s.Get();
+      if n >= 0 then
+         diff.Set(Fn.Sqrt(n));
+         diff.SetUnits(t.GetUnits());
+         mean := t[1,1] + t[2,2];
+         lambda1 := (mean + diff)/two;
+         lambda2 := (mean - diff)/two
+      else
+         L.ErrorMessage(413,10, "Bel.CCM.Tensors2.Eigenvalues")
+      end
+   end Eigenvalues;
+
+   procedure {private} Eigenvectors (t : Tensor;
+                                     lambda1, lambda2 : S.Scalar;
+                                     var vector1, vector2 : V.Vector);
+   var
+      n, t12, t21 : N.Number;
+      s : S.Scalar;
+      v1, v2 : V.Vector;
+   begin
+      s := t[1,2];
+      t12 := Fn.Abs(s.Get());
+      s := t[2,1];
+      t21 := Fn.Abs(s.Get());
+      n := Fn.Max(t12, t21);
+      if n # 0 then
+         if n = t21 then
+            v1[1] := (lambda1 - t[2,2])/t[2,1];
+            v1[2] := oneScalar;
+            v2[1] := (lambda2 - t[2,2])/t[2,1];
+            v2[2] := oneScalar;
+            vector1 := V.UnitVector(v1);
+            vector2 := V.UnitVector(v2)
+         else
+            v1[1] := oneScalar;
+            v1[2] := (lambda1 - t[1,1])/t[1,2];
+            v2[1] := oneScalar;
+            v2[2] := (lambda2 - t[1,1])/t[1,2];
+            vector1 := V.UnitVector(v1);
+            vector2 := V.UnitVector(v2)
+         end
+      else
+         vector1[1] := oneScalar;
+         vector1[2] := zeroScalar;
+         vector2[1] := zeroScalar;
+         vector2[2] := oneScalar
+      end
+   end Eigenvectors;
+
+   procedure {public} SpectralDecomposition(t : Tensor; var Lambda, Q : Tensor);
+   var
+      l1, l2, t0 : S.Scalar;
+      v1, v2 : V.Vector;
+   begin
+      Eigenvalues(t, l1, l2);
+      Eigenvectors(t, l1, l2, v1, v2);
+      t0 := zero;
+      t0.SetUnits(t.GetUnits());
+      Lambda.SetUnits(t.GetUnits());
+      Lambda[1,1] := l1;
+      Lambda[1,2] := t0;
+      Lambda[2,1] := t0;
+      Lambda[2,2] := l2;
+      Q[1,1] := v1[1];
+      Q[2,1] := v1[2];
+      Q[1,2] := v2[1];
+      Q[2,2] := v2[2]
+   end SpectralDecomposition;
+
+begin
+   zero := 0.0E+0;
+   one  := 1.0E+0;
+   two  := 2.0E+0;
+   zeroScalar.Set(zero);
+   oneScalar.Set(one);
+   twoScalar.Set(two);
+   I[1,1] := oneScalar;
+   I[1,2] := zeroScalar;
+   I[2,1] := zeroScalar;
+   I[2,2] := oneScalar
+end Tensors2.

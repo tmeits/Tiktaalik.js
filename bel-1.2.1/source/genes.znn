@@ -1,0 +1,308 @@
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(*       BBBB      EEEEE     L         The                                    *)
+(*       B   B     E         L           BIOLOGICAL                           *)
+(*       BBBB      EEE       L           ENGINEERING                          *)
+(*       B    B    E         L           LABORATORY                           *)
+(*       BBBBB     EEEEEE    LLLLLL        @ Saginaw Valley State University  *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Copyright 2008-2010, Alan D. Freed                                         *)
+(*                                                                            *)
+(* This file is part of the BEL suite of .NET/mono libraries.                 *)
+(*                                                                            *)
+(* BEL is a free software: you can redistribute it and/or modify it under the *)
+(* terms of the GNU Lesser General Public License as published by the Free    *)
+(* Software Foundation, either version 3 of the License, or (at your option)  *)
+(* any later version.                                                         *)
+(*                                                                            *)
+(* BEL is distributed in the hope that it will be useful, but WITHOUT ANY     *)
+(* WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS  *)
+(* FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License for   *)
+(* more details.                                                              *)
+(*                                                                            *)
+(* You should have received a copy of the GNU Lesser General Public License   *)
+(* along with BEL.  If not, see <http://www.gnu.org/licenses/>.               *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* This file is 2 of 7 creating a genetic algorithm for parameter estimation  *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* SGA stands for Simple Genetic Algorithm.  SGA was originally written in    *)
+(* Pascal, and is nicely documented in the textbook:                          *)
+(*   Goldberg, D. E., "Genetic Algorithms in search, optimization & machine   *)
+(*                     learning," Addison-Wesley, Boston, 1989.               *)
+(* David Goldberg's original SGA code carries the following copywrite notice: *)
+(*   { A Simple Genetic Algorithm - SGA - v1.0 }                              *)
+(*   { (c)   David Edward Goldberg  1986       }                              *)
+(*   {       All Rights Reserved               }                              *)
+(* This reinterpretation of Goldberg's original SGA is written in Zonnon - a  *)
+(* direct decendent of Pascal.  It is a complete rewrite of SGA.  In this     *)
+(* rewrite, efforts have been made to keep true to the spirit of Goldberg's   *)
+(* original SGA algorithms.                                                   *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* A gene is a singleton in genetic memory - a bit of biological memory.      *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Definition                                                                 *)
+(*    Gene                                                                    *)
+(*       Initialize : generate a random allele value (eg, dominant/recessive) *)
+(*       Clone      : make a duplicate (deep) copy of the gene                *)
+(*       IsEqualTo  : determines if two genes are equivalent                  *)
+(*       Parse      : character representation of the gene ==> allele         *)
+(*       Typeset    : allele ==> character representation of the gene         *)
+(*       Mutate     : random chance exchange of the allele value held by gene *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Types                                                                      *)
+(*    Biallelic    :  a {recessive, dominant} gene                            *)
+(*                    with respective allele belonging to the set {0,1}       *)
+(*    Triallelic   :  a {recessive, recessive-dominant, dominant} gene        *)
+(*                    with respective allele belonging to the set {0,%,1}     *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+
+
+definition {public, value} Bel.Gene;
+   import
+      Bel.MF.Numbers as N;
+   procedure {public} Initialize;
+   procedure {public} Clone     () : object{Gene};
+   procedure {public} IsEqualTo (g : object{Gene}) : boolean;
+   procedure {public} Parse     (allele : char);
+   procedure {public} Typeset   () : char;
+   procedure {public} Mutate    (mutationProbability : N.Number;
+                                 var numberOfMutations : integer);
+end Gene.
+
+
+module {public} Bel.GA.Genes;
+
+   import
+      Bel.IO.Log as L,
+      Bel.MF.Numbers as N,
+      Bel.GA.Statistics as S,
+      Bel.Gene as Gene;
+
+   var {private}
+      evenOdds : N.Number;
+
+   (* dominant and recessive genes *)
+
+   type {public, value} Biallelic = object implements Gene
+
+      var {private}
+         allele : integer{8};
+
+      procedure {public} Initialize
+         implements Gene.Initialize;
+      begin
+          (* 50% dominant, 50% recessive *)
+          if S.FlipHeads(evenOdds) then
+             allele := 1  (* dominant *)
+          else
+             allele := 0  (* recessive *)
+          end
+      end Initialize;
+
+      procedure {public} Clone () : object{Gene}
+         implements Gene.Clone;
+      var
+         b : Biallelic;
+      begin
+         b.allele := allele;
+         return Gene(b)
+      end Clone;
+
+      (* uses alphabet {0,1} for {recessive, dominant} *)
+      procedure {public} Parse (allele : char)
+         implements Gene.Parse;
+      begin
+         if allele = "0" then
+            self.allele := 0
+         elsif allele = "1" then
+            self.allele := 1
+         else
+            L.ErrorMessage(5,20, "Bel.GA.Genes.Biallelic.Parse")
+         end
+      end Parse;
+
+      procedure {public} Typeset () : char
+         implements Gene.Typeset;
+      var
+         c : char;
+      begin
+         if allele = 0 then
+            c := "0"
+         else
+            c := "1"
+         end;
+         return c
+      end Typeset;
+
+      procedure {public} Mutate (mutationProbability : N.Number;
+                                 var numberOfMutations : integer)
+         implements Gene.Mutate;
+      begin
+         if S.FlipHeads(mutationProbability) then
+            if allele = 0 then
+               allele := 1
+            else
+               allele := 0
+            end;
+            inc(numberOfMutations)
+         end
+      end Mutate;
+
+      procedure {public} IsEqualTo (g : object{Gene}) : boolean
+         implements Gene.IsEqualTo;
+      var
+         b : Biallelic;
+      begin
+         if g is Biallelic then
+            b := Biallelic(g);
+            if allele = b.allele then
+               return true
+            else
+               return false
+            end
+         else
+            return false
+         end
+      end IsEqualTo;
+
+   begin
+      Initialize
+   end Biallelic;
+
+
+   (* dominant, dominant-ressessive & recessive genes *)
+
+   type {public, value} Triallelic = object implements Gene
+      var {private}
+         allele : integer{8};
+
+      procedure {public} Initialize
+         implements Gene.Initialize;
+      begin
+          (* 25% dominant, 25% dominant-recessive, 50% recessive  *)
+          (* this produces binary decoding with 50% 1s and 50% 0s *)
+          if S.FlipHeads(evenOdds) then
+             if S.FlipHeads(evenOdds) then
+                allele := 2  (* dominant *)
+             else
+                allele := 0  (* recessive *)
+             end
+          else
+             if S.FlipHeads(evenOdds) then
+                allele := 0  (* recessive *)
+             else
+                allele := 1  (* dominant-recessive *)
+             end
+          end
+      end Initialize;
+
+      procedure {public} Clone () : object{Gene}
+         implements Gene.Clone;
+      var
+         t : Triallelic;
+      begin
+         t.allele := allele;
+         return Gene(t)
+      end Clone;
+
+      (* uses alphabet {0,%,1} for {recessive, recessive-dominant, dominant} *)
+      procedure {public} Parse (allele : char)
+         implements Gene.Parse;
+      begin
+         if allele = "0" then
+            self.allele := 0
+         elsif allele = "%" then
+            self.allele := 1
+         elsif allele = "1" then
+            self.allele := 2
+         else
+            L.ErrorMessage(5,20, "Bel.GA.Genes.Triallelic.Parse")
+         end
+      end Parse;
+
+      procedure {public} Typeset () : char
+         implements Gene.Typeset;
+      var
+         c : char;
+      begin
+         if allele = 0 then
+            c := "0"
+         elsif allele = 1 then
+            c := "%"
+         else (* allele = 2 *)
+            c := "1"
+         end;
+         return c
+      end Typeset;
+
+      procedure {public} Mutate (mutationProbability : N.Number;
+                                 var numberOfMutations : integer)
+         implements Gene.Mutate;
+      begin
+         if S.FlipHeads(mutationProbability) then
+            if allele = 0 then
+               if S.FlipHeads(evenOdds) then
+                  allele := 2
+               else
+                  allele := 1
+               end
+            elsif allele = 1 then
+               if S.FlipHeads(evenOdds) then
+                  allele := 0
+               else
+                  allele := 2
+               end
+            else (* allele = 2 *)
+               if S.FlipHeads(evenOdds) then
+                  allele := 1
+               else
+                  allele := 0
+               end
+            end;
+            inc(numberOfMutations)
+         end
+      end Mutate;
+
+      procedure {public} IsEqualTo (g : object{Gene}) : boolean
+         implements Gene.IsEqualTo;
+      var
+         t : Triallelic;
+      begin
+         if g is Triallelic then
+            t := Triallelic(g);
+            if allele = t.allele then
+               return true
+            else
+               return false
+            end
+         else
+            return false
+         end
+      end IsEqualTo;
+
+   begin
+      Initialize
+   end Triallelic;
+
+   operator {public} "=" (l, r : Biallelic) : boolean;
+   begin
+      return l.IsEqualTo(r)
+   end "=";
+
+   operator {public} "#" (l, r : Biallelic) : boolean;
+   begin
+      return ~l.IsEqualTo(r)
+   end "#";
+
+   operator {public} "=" (l, r : Triallelic) : boolean;
+   begin
+      return l.IsEqualTo(r)
+   end "=";
+
+   operator {public} "#" (l, r : Triallelic) : boolean;
+   begin
+      return ~l.IsEqualTo(r)
+   end "#";
+
+begin
+   evenOdds := 0.5
+end Genes.

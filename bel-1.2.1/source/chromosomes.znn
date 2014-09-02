@@ -1,0 +1,961 @@
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(*       BBBB      EEEEE     L         The                                    *)
+(*       B   B     E         L           BIOLOGICAL                           *)
+(*       BBBB      EEE       L           ENGINEERING                          *)
+(*       B    B    E         L           LABORATORY                           *)
+(*       BBBBB     EEEEEE    LLLLLL        @ Saginaw Valley State University  *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Copyright 2008-2010, Alan D. Freed                                         *)
+(*                                                                            *)
+(* This file is part of the BEL suite of .NET/mono libraries.                 *)
+(*                                                                            *)
+(* BEL is a free software: you can redistribute it and/or modify it under the *)
+(* terms of the GNU Lesser General Public License as published by the Free    *)
+(* Software Foundation, either version 3 of the License, or (at your option)  *)
+(* any later version.                                                         *)
+(*                                                                            *)
+(* BEL is distributed in the hope that it will be useful, but WITHOUT ANY     *)
+(* WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS  *)
+(* FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License for   *)
+(* more details.                                                              *)
+(*                                                                            *)
+(* You should have received a copy of the GNU Lesser General Public License   *)
+(* along with BEL.  If not, see <http://www.gnu.org/licenses/>.               *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* This file is 3 of 7 creating a genetic algorithm for parameter estimation  *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* SGA stands for Simple Genetic Algorithm.  SGA was originally written in    *)
+(* Pascal, and is nicely documented in the textbook:                          *)
+(*   Goldberg, D. E., "Genetic Algorithms in search, optimization & machine   *)
+(*                     learning," Addison-Wesley, Boston, 1989.               *)
+(* David Goldberg's original SGA code carries the following copywrite notice: *)
+(*   { A Simple Genetic Algorithm - SGA - v1.0 }                              *)
+(*   { (c)   David Edward Goldberg  1986       }                              *)
+(*   {       All Rights Reserved               }                              *)
+(* This reinterpretation of Goldberg's original SGA is written in Zonnon - a  *)
+(* direct decendent of Pascal.  It is a complete rewrite of SGA.  In this     *)
+(* rewrite, efforts have been made to keep true to the spirit of Goldberg's   *)
+(* original SGA algorithms.                                                   *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* A chromosome is a repository for genetic material in living organisms.     *)
+(* Here, a chromosome associates with a single parameter in a mathematical    *)
+(* model whose optimum value is being sought by mimicing nature's processes   *)
+(* of genetic manipulation and evolution.                                     *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* A chromosome is a string of genes whose expressions are called the allele. *)
+(* An index and a locus are two pointers to a chromosome string defined by:   *)
+(*   E.g., consider a representative 8-bit chromosome with alphabet {A, B}    *)
+(*     chromosome index  :   0   1   2   3   4   5   6   7                    *)
+(*     chromosome string : ( A   B   A   A   B   B   B   A ) - its genotype   *)
+(*     chromosome locus  :     1   2   3   4   5   6   7                      *)
+(* The indexers start at 0. The loci start at 1 & point between the indices.  *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Definition                                                                 *)
+(*   Chromosome                                                               *)
+(*      Initialize : prepares the encoder/decoder for decoding a parameter    *)
+(*      Clone      : make a duplicate (deep) copy of the chromosome           *)
+(*      IsEqualTo  : determines if two chromosomes have same gene expression  *)
+(*      Length     : the number genes that makes up the chromosome            *)
+(*      Parse      : string representation of the chromosome ==> genotype     *)
+(*      Typeset    : genotype ==> string representation of the chromosome     *)
+(*      Mutate     : scan over the internal array of genes for mutating       *)
+(*      Decode     : chromosome genotype ==> model-parameter phenotype        *)
+(*      Encode     : model-parameter phenotype ==> chromosome genotype        *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Types                                                                      *)
+(*   Haploid       :  chromosomes based on the Bel.GA.Genes.Biallelic  gene   *)
+(*   Diploid       :  chromosomes based on the Bel.GA.Genes.Triallelic gene   *)
+(* Procedure                                                                  *)
+(*   Crossover     :  genetic splicing : creates 2 children from 2 parents    *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* The Encode-Decode procedures are one-to-one in the phenotype but, in the   *)
+(* case of the diploid chromosome, not one-to-one in their genotype, because  *)
+(* the genotype-to-phenotype mapping is many-to-one for a diploid chromosome. *)
+(* The genotype-to-phenotype mapping is one-to-one for a haploid chromosome.  *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+
+
+definition {public, ref} Bel.Chromosome;
+   import
+      Bel.MF.Numbers as N;
+   procedure {public} Initialize (minParameter, maxParameter : N.Number;
+                                  numberOfSignificantFigures : integer);
+   procedure {public} Clone      () : object{Chromosome};
+   procedure {public} IsEqualTo  (c : object{Chromosome}) : boolean;
+   procedure {public} Length     () : integer;
+   procedure {public} Parse      (genotype : string);
+   procedure {public} Typeset    () : string;
+   procedure {public} Mutate     (mutationProbability : N.Number;
+                                  var numberOfMutations : integer);
+   procedure {public} Encode     (phenotype : N.Number);
+   procedure {public} Decode     () : N.Number;
+end Chromosome.
+
+
+module {public} Bel.GA.Chromosomes;
+
+   import
+      System.Int32 as Int,
+      Bel.IO.Log as L,
+      Bel.MF.Numbers as N,
+      Bel.GA.Statistics as S,
+      Bel.GA.Genes      as G,
+      Bel.Chromosome as Chromosome;
+
+
+   var {private}
+      evenOdds : N.Number;
+      maxPower : integer{64};
+
+
+   type {private}
+      CharArray     = array * of char;
+      BinaryArray   = array * of integer{8};
+
+   type {public}
+      BiChromosome  = array * of G.Biallelic;
+      TriChromosome = array * of G.Triallelic;
+
+
+   procedure {public} Crossover (probabilityOfCrossover : N.Number;
+                                 parentA, parentB : object{Chromosome};
+                                 var numberOfCrossovers : integer;
+                                 var childA, childB : object{Chromosome});
+   var
+      dA, dB : Diploid;
+      gb : G.Biallelic;
+      gt : TriChromosome;
+      hA, hB : Haploid;
+      i, xoverA, xoverB : integer;
+   begin
+      if parentA.Length() = parentB.Length() then
+         if S.FlipHeads(probabilityOfCrossover) then
+            xoverA := S.RandomIntegerBetween(2, parentA.Length()-2);
+            xoverB := S.RandomIntegerBetween(xoverA+1, parentA.Length());
+            if (parentA is Haploid) & (parentB is Haploid) then
+               hA := Haploid(parentA.Clone());
+               hB := Haploid(parentB.Clone());
+               for i := xoverA to xoverB do
+                  gb := hA[i];
+                  hA[i] := hB[i];
+                  hB[i] := gb
+               end;
+               if S.FlipHeads(evenOdds) then
+                  childA := Chromosome(hA);
+                  childB := Chromosome(hB)
+               else
+                  childA := Chromosome(hB);
+                  childB := Chromosome(hA)
+               end;
+               inc(numberOfCrossovers)
+            elsif (parentA is Diploid) & (parentB is Diploid) then
+               dA := Diploid(parentA.Clone());
+               dB := Diploid(parentB.Clone());
+               gt := new TriChromosome(2);
+               for i := xoverA to xoverB do
+                  gt := dA[i];
+                  dA[i] := dB[i];
+                  dB[i] := gt
+               end;
+               if S.FlipHeads(evenOdds) then
+                  childA := Chromosome(dA);
+                  childB := Chromosome(dB)
+               else
+                  childA := Chromosome(dB);
+                  childB := Chromosome(dA)
+               end;
+               inc(numberOfCrossovers)
+            else
+               L.Message("Chromosome parents must belong to the same genotype");
+               L.ErrorMessage(501,20, "Bel.GA.Chromosomes.Crossover")
+            end
+         else
+            if ((parentA is Haploid) & (parentB is Haploid)) or
+               ((parentA is Diploid) & (parentB is Diploid)) then
+               if S.FlipHeads(evenOdds) then
+                  childA := parentA.Clone();
+                  childB := parentB.Clone()
+               else
+                  childA := parentB.Clone();
+                  childB := parentA.Clone()
+               end
+            else
+               L.Message("Chromosome parents must belong to the same genotype");
+               L.ErrorMessage(501,20, "Bel.GA.Chromosomes.Crossover")
+            end
+         end
+      else
+         L.Message("Chromosome parents must belong to the same phenotype");
+         L.ErrorMessage(515,20, "Bel.GA.Chromosomes.Crossover")
+      end
+   end Crossover;
+
+   (* two neighboring binary values typically vary at more than one index *)
+   (* two neighboring Gray coded binary numbers vary by only a single bit *)
+
+   procedure {private} BinaryToGray (var binary, gray : BinaryArray);
+   (* binary is made a var agrument for efficiency reasons only *)
+   var
+      i : integer;
+   begin
+      gray[0] := binary[0];
+      for i := 1 to len(binary)-1 do
+         (* XOR logic *)
+         if binary[i] # binary[i-1] then
+            gray[i] := 1
+         else
+            gray[i] := 0
+         end
+      end
+   end BinaryToGray;
+
+   procedure {private} GrayToBinary (var gray, binary : BinaryArray);
+   (* gray is made a var argument for efficiency reasons only *)
+   var
+      i : integer;
+      k : integer{8};
+   begin
+      k := gray[0];
+      binary[0] := k;
+      for i := 1 to len(gray)-1 do
+         if gray[i] = 1 then
+            if k = 0 then
+               k := 1
+            else
+               k := 0
+            end
+         end;
+         binary[i] := k
+      end
+   end GrayToBinary;
+
+   procedure {private} BinaryToInt (var b : BinaryArray; var i : integer{64});
+   (* b is made a var argument for efficiency reasons only *)
+   var
+      k : integer;
+      power : integer{64};
+   begin
+      i := 0;
+      power := 1;
+      for k := len(b)-1 to 0 by -1 do
+         if b[k] = 1 then
+            i := i + power
+         end;
+         power := 2*power
+      end
+   end BinaryToInt;
+
+   procedure {private} IntToBinary (i : integer{64}; var b : BinaryArray);
+   var
+      k, length : integer;
+   begin
+      k := len(b) - 1;
+      while i # 0 do
+         b[k] := integer(i mod 2, 8);
+         i := i div 2;
+         dec(k)
+      end;
+      length := len(b) - k - 1;
+      (* the remaining higher-order binary digits are all zeros *)
+      for k := len(b)-length-1 to 0 by -1 do
+         b[k] := 0
+      end
+   end IntToBinary;
+
+   (* chromosomes with a single strand of genes, like some bacteria, etc. *)
+
+   type {public, ref} Haploid = object implements [], Chromosome
+
+      var {private}
+         chromosome   : BiChromosome; (* a single gene-strand chromosome      *)
+         dominant,                    (* denotes a dominant  biallelic gene   *)
+         recessive    : G.Biallelic;  (* denotes a recessive biallelic gene   *)
+         maxPhenotype : N.Number;     (* upper bound on the parameter field   *)
+         minPhenotype : N.Number;     (* lower bound on the parameter field   *)
+         fullRange    : N.Number;     (* full range of integer representation *)
+
+      procedure {public} Initialize (minParameter, maxParameter : N.Number;
+                                     numberOfSignificantFigures : integer)
+         implements Chromosome.Initialize;
+      var
+         diff : N.Number;
+         g : G.Biallelic;
+         i, k : integer;
+         int : Int;
+         power, range : integer{64};
+         s : string;
+      begin
+         diff := maxParameter - minParameter;
+         range := integer(diff.Get(), 64);
+         if range <= 0 then
+            range := 1
+         end;
+         for i := 1 to numberOfSignificantFigures do
+            range := 10*range
+         end;
+         i := 0;
+         power := 1;
+         repeat
+            if power >= maxPower then
+               int := numberOfSignificantFigures;
+               s := "The number of significant figures, or precision, ";
+               s := s + int.ToString();
+               L.Message(s);
+               s := "is too great for an assigned parameter range.";
+               L.Message(s);
+               L.ErrorMessage(50,415, "Bel.GA.Chromosomes.Haploid.Initialize")
+            end;
+            inc(i);
+            power := 2*power
+         until power > range;
+         if i < 5 then
+            i := 5
+         end;
+         chromosome := new BiChromosome(i);
+         for k := 0 to i-1 do
+            (* assign random alleles to the chromosome strand *)
+            g.Initialize;
+            chromosome[k] := g
+         end;
+         minPhenotype := minParameter;
+         maxPhenotype := maxParameter;
+         dec(power);
+         fullRange := power
+      end Initialize;
+
+      procedure {public} Clone () : object{Chromosome}
+         implements Chromosome.Clone;
+      var
+         g : G.Biallelic;
+         h : Haploid;
+         i : integer;
+      begin
+         h := new Haploid;
+         h.chromosome := new BiChromosome(Length());
+         for i := 0 to Length()-1 do
+            g := chromosome[i];
+            h.chromosome[i] := G.Biallelic(g.Clone())
+         end;
+         h.maxPhenotype := maxPhenotype;
+         h.minPhenotype := minPhenotype;
+         h.fullRange := fullRange;
+         return Chromosome(h)
+      end Clone;
+
+      procedure {public} Get (index : integer) : G.Biallelic
+         implements [].Get;
+      begin
+         dec(index);
+         return chromosome[index]
+      end Get;
+
+      procedure {public} Set (index : integer; gene : G.Biallelic)
+         implements [].Set;
+      begin
+         dec(index);
+         chromosome[index] := gene
+      end Set;
+
+      procedure {public} Length () : integer
+         implements Chromosome.Length;
+      begin
+         if chromosome # nil then
+            return len(chromosome)
+         else
+            return 0
+         end
+      end Length;
+
+      procedure {public} Parse (genotype : string)
+         implements Chromosome.Parse;
+      var
+         a : CharArray;
+         g : G.Biallelic;
+         i, j, length, startAt : integer;
+      begin
+         a := new CharArray(len(genotype)+2);
+         copy(genotype, a);
+         (* pass over any leading white space *)
+         i := 0;
+         while a[i] = " " do
+            inc(i)
+         end;
+         startAt := i;
+         (* determine the length of the supplied genotype *)
+         length := 0;
+         while (a[i] = "0") or (a[i] = "1") do
+            inc(i);
+            inc(length)
+         end;
+         if length > Length() then
+            L.WarningMessage(50,90, "Bel.GA.Chromosomes.Haploid.Parse");
+            (* chop off the overflowed binary digits *)
+            startAt := startAt + length - Length();
+            length := Length()
+         end;
+         (* pad the higher-order binary digits with zeros, if needed *)
+         for j := 0 to Length()-length-1 do
+            chromosome[j] := recessive
+         end;
+         (* parse the the binary number *)
+         for i := startAt to startAt+length-1 do
+            g.Parse(a[i]);
+            chromosome[j] := g;
+            inc(j)
+         end;
+      end Parse;
+
+      procedure {public} Typeset () : string
+         implements Chromosome.Typeset;
+      var
+         a : CharArray;
+         g : G.Biallelic;
+         i : integer;
+         s : string;
+      begin
+         a := new CharArray(Length()+2);
+         for i := 0 to Length()-1 do
+            g := chromosome[i];
+            a[i] := g.Typeset()
+         end;
+         copy(a, s);
+         (* pad with a space fore and aft *)
+         s := " " + s + " ";
+         return s
+      end Typeset;
+
+      procedure {public} Mutate (mutationProbability : N.Number;
+                                 var numberOfMutations : integer)
+         implements Chromosome.Mutate;
+      var
+         g : G.Biallelic;
+         i : integer;
+      begin
+         for i := 0 to Length()-1 do
+            g := chromosome[i];
+            g.Mutate(mutationProbability, numberOfMutations);
+            chromosome[i] := g
+         end
+      end Mutate;
+
+      procedure {private} IntToNumber (int : integer{64}; var n : N.Number);
+      begin
+         n := minPhenotype + (maxPhenotype - minPhenotype)*(int/fullRange);
+         (* address possible roundoff discrepancies *)
+         if n < minPhenotype then
+            n := minPhenotype
+         end;
+         if n > maxPhenotype then
+            n := maxPhenotype
+         end
+      end IntToNumber;
+
+      procedure {public} Decode () : N.Number
+         implements Chromosome.Decode;
+      var
+         binary, gray : BinaryArray;
+         i : integer;
+         int : integer{64};
+         phenotype : N.Number;
+      begin
+         if Length() > 0 then
+            binary := new BinaryArray(Length());
+            gray   := new BinaryArray(Length());
+            (* haploid chromosomes are Gray encoded *)
+            for i := 0 to Length()-1 do
+               if chromosome[i] = dominant then
+                  gray[i] := 1
+               else
+                  gray[i] := 0
+               end
+            end;
+            GrayToBinary(gray, binary);
+            BinaryToInt(binary, int);
+            IntToNumber(int, phenotype)
+         else
+            phenotype := 0
+         end;
+         return phenotype
+      end Decode;
+
+      procedure {private} NumberToInt (n : N.Number; var int : integer{64});
+      var
+         range : N.Number;
+      begin
+         (* (minPhenotype)  0 <= range <= fullRange  (maxPhenotype) *)
+         range := fullRange*((n - minPhenotype)/(maxPhenotype - minPhenotype));
+         int := integer(range.Get(), 64);
+         (* address possible roundoff discrepancies *)
+         if int < 0 then
+            int := 0
+         end;
+         if int > fullRange then
+            int := integer(fullRange.Get(), 64)
+         end
+      end NumberToInt;
+
+      procedure {public} Encode (phenotype : N.Number)
+         implements Chromosome.Encode;
+      var
+         binary, gray : BinaryArray;
+         i : integer;
+         int : integer{64};
+      begin
+         binary := new BinaryArray(Length());
+         gray   := new BinaryArray(Length());
+         NumberToInt(phenotype, int);
+         IntToBinary(int, binary);
+         BinaryToGray(binary, gray);
+         for i := 0 to Length()-1 do
+            if gray[i] = 1 then
+               chromosome[i] := dominant
+            else
+               chromosome[i] := recessive
+            end
+         end
+      end Encode;
+
+      procedure {public} IsEqualTo (c : object{Chromosome}) : boolean
+         implements Chromosome.IsEqualTo;
+      var
+         h : Haploid;
+         i : integer;
+      begin
+         if c is Haploid then
+            h := Haploid(c);
+            if Length() = h.Length() then
+               i := 0;
+               loop
+                  if i = Length() then
+                     exit
+                  end;
+                  if chromosome[i] # h.chromosome[i] then
+                     return false
+                  end;
+                  inc(i)
+               end;
+               return true
+            else
+               return false
+            end
+         else
+            return false
+         end
+      end IsEqualTo;
+
+   begin
+      dominant.Parse("1");
+      recessive.Parse("0")
+   end Haploid;
+
+   (* chromosomes with a double strand of genes, like humans *)
+
+   type {public, ref} Diploid = object implements [], Chromosome
+
+      var {private}
+         chromosomeA,                    (* first  chromosome in the pair     *)
+         chromosomeB  : TriChromosome;   (* second chromosome in the pair     *)
+         dominant,                    (* denotes a dominant   triallelic gene *)
+         dominantRecessive,           (* a dominant/recessive triallelic gene *)
+         recessive    : G.Triallelic; (* denotes a recessive  triallelic gene *)
+         maxPhenotype : N.Number;     (* upper bound on the parameter field   *)
+         minPhenotype : N.Number;     (* lower bound on the parameter field   *)
+         fullRange    : N.Number;     (* full range of integer representation *)
+
+      procedure {public} Initialize (minParameter, maxParameter : N.Number;
+                                     numberOfSignificantFigures : integer)
+         implements Chromosome.Initialize;
+      var
+         diff : N.Number;
+         g : G.Triallelic;
+         i, k : integer;
+         int : Int;
+         power, range : integer{64};
+         s : string;
+      begin
+         diff := maxParameter - minParameter;
+         range := integer(diff.Get(), 64);
+         if range <= 0 then
+            range := 1
+         end;
+         for i := 1 to numberOfSignificantFigures do
+            range := 10*range
+         end;
+         i := 0;
+         power := 1;
+         repeat
+            if power >= maxPower then
+               int := numberOfSignificantFigures;
+               s := "The number of significant figures, or precision, ";
+               s := s + int.ToString();
+               L.Message(s);
+               s := "is too great for an assigned parameter range.";
+               L.Message(s);
+               L.ErrorMessage(50,415, "Bel.GA.Chromosomes.Diploid.Initialize")
+            end;
+            inc(i);
+            power := 2*power
+         until power > range;
+         if i < 5 then
+            i := 5
+         end;
+         chromosomeA := new TriChromosome(i);
+         chromosomeB := new TriChromosome(i);
+         for k := 0 to i-1 do
+            (* assign random alleles to the pair of chromosome strands *)
+            g.Initialize;
+            chromosomeA[k] := g;
+            g.Initialize;
+            chromosomeB[k] := g
+         end;
+         minPhenotype := minParameter;
+         maxPhenotype := maxParameter;
+         dec(power);
+         fullRange := power
+      end Initialize;
+
+      procedure {public} Clone () : object{Chromosome}
+         implements Chromosome.Clone;
+      var
+         d : Diploid;
+         g : G.Triallelic;
+         i : integer;
+      begin
+         d := new Diploid;
+         d.chromosomeA := new TriChromosome(Length());
+         d.chromosomeB := new TriChromosome(Length());
+         for i := 0 to Length()-1 do
+            g := chromosomeA[i];
+            d.chromosomeA[i] := G.Triallelic(g.Clone());
+            g := chromosomeB[i];
+            d.chromosomeB[i] := G.Triallelic(g.Clone())
+         end;
+         d.maxPhenotype := maxPhenotype;
+         d.minPhenotype := minPhenotype;
+         d.fullRange := fullRange;
+         return Chromosome(d)
+      end Clone;
+
+      (* passed TriChromosomes of Get & Set must have length = 2 *)
+      (* one Triallelic gene for each strand in the chromosome   *)
+      procedure {public} Get (index : integer) : TriChromosome
+         implements [].Get;
+      var
+         gene : TriChromosome;
+      begin
+         dec(index);
+         gene := new TriChromosome(2);
+         gene[0] := chromosomeA[index];
+         gene[1] := chromosomeB[index];
+         return gene
+      end Get;
+
+      procedure {public} Set (index : integer; genePair : TriChromosome)
+         implements [].Set;
+      begin
+         dec(index);
+         chromosomeA[index] := genePair[0];
+         chromosomeB[index] := genePair[1]
+      end Set;
+
+      procedure {public} Length () : integer
+         implements Chromosome.Length;
+      begin
+         if chromosomeA # nil then
+            return len(chromosomeA)
+         else
+            return 0
+         end
+      end Length;
+
+      procedure {private} ParseString (a : CharArray; length : integer;
+                                       var c : TriChromosome);
+      var
+         g : G.Triallelic;
+         i, j, startAt : integer;
+      begin
+         if length <= Length() then
+            startAt := 0
+         else
+            L.WarningMessage(50,90, "Bel.GA.Chromosomes.Diploid.Parse");
+            (* chop off the overflowed binary digits *)
+            startAt := length - Length();
+            length := Length()
+         end;
+         (* pad the higher-order binary digits with zeros, if needed *)
+         for j := 0 to Length()-length-1 do
+            c[j] := recessive
+         end;
+         (* parse the genotype *)
+         for i := startAt to startAt+length-1 do
+            g.Parse(a[i]);
+            inc(j);
+            c[j] := g
+         end
+      end ParseString;
+
+      (* side-by-side expression of the two allele strands of a chromosome *)
+      procedure {public} Parse (genotype : string)
+         implements Chromosome.Parse;
+      var
+         a, b, c : CharArray;
+         i, j, length, startAt : integer;
+      begin
+         a := new CharArray(len(genotype)+2);
+         copy(genotype, a);
+         (* pass over any leading white space *)
+         i := 0;
+         while a[i] = " " do
+            inc(i)
+         end;
+         startAt := i;
+         (* determine the length of the first strand in the genotype *)
+         length := 0;
+         while (a[i] = "0") or (a[i] = "%") or (a[i] = "1") do
+            inc(i);
+            inc(length)
+         end;
+         (* parse the first strand *)
+         b := new CharArray(length+2);
+         for j := 0 to length-1 do
+            b[j] := a[startAt+j]
+         end;
+         ParseString(b, length, chromosomeA);
+         (* pass over white space between the genotype strings *)
+         while a[i] = " " do
+            inc(i)
+         end;
+         startAt := i;
+         (* determine the length of the second strand in the genotype *)
+         length := 0;
+         while (a[i] = "0") or (a[i] = "%") or (a[i] = "1") do
+            inc(i);
+            inc(length)
+         end;
+         (* parse the second strand *)
+         c := new CharArray(length+2);
+         for j := 0 to length-1 do
+            c[j] := a[startAt+j]
+         end;
+         ParseString(c, length, chromosomeB)
+      end Parse;
+
+      procedure {public} Typeset () : string
+         implements Chromosome.Typeset;
+      var
+         a : CharArray;
+         g : G.Triallelic;
+         i : integer;
+         s, sA, sB : string;
+      begin
+         a := new CharArray(Length()+2);
+         for i := 0 to Length()-1 do
+            g := chromosomeA[i];
+            a[i] := g.Typeset()
+         end;
+         copy(a, sA);
+         for i := 0 to Length()-1 do
+            g := chromosomeB[i];
+            a[i] := g.Typeset()
+         end;
+         copy(a, sB);
+         (* pad with a space fore, aft, and inbetween *)
+         s := " " + sA + " " + sB + " ";
+         return s
+      end Typeset;
+
+      procedure {public} Mutate (mutationProbability : N.Number;
+                                 var numberOfMutations : integer)
+         implements Chromosome.Mutate;
+      var
+         g : G.Triallelic;
+         i : integer;
+      begin
+         for i := 0 to Length()-1 do
+            g := chromosomeA[i];
+            g.Mutate(mutationProbability, numberOfMutations);
+            chromosomeA[i] := g;
+            g := chromosomeB[i];
+            g.Mutate(mutationProbability, numberOfMutations);
+            chromosomeB[i] := g
+         end
+      end Mutate;
+
+      procedure {private} GeneIsExpressed (a, b : G.Triallelic) : boolean;
+      (* gene expression based on triallelic dominance map of Hollstien *)
+      begin
+         if (a = dominant) or (b = dominant) then
+            return true
+         elsif (a = dominantRecessive) & (b = dominantRecessive) then
+            return true
+         else
+            return false
+         end
+      end GeneIsExpressed;
+
+      procedure {private} IntToNumber (int : integer{64}; var n : N.Number);
+      begin
+         n := minPhenotype + (maxPhenotype - minPhenotype)*(int/fullRange);
+         (* address possible roundoff discrepancies *)
+         if n < minPhenotype then
+            n := minPhenotype
+         end;
+         if n > maxPhenotype then
+            n := maxPhenotype
+         end
+      end IntToNumber;
+
+      procedure {public} Decode () : N.Number
+         implements Chromosome.Decode;
+      var
+         binary, gray : BinaryArray;
+         i : integer;
+         int : integer{64};
+         phenotype : N.Number;
+      begin
+         if Length() > 0 then
+            binary := new BinaryArray(Length());
+            gray   := new BinaryArray(Length());
+            (* diploid chromosomes are expressed as Gray encoded *)
+            for i := 0 to Length()-1 do
+               if GeneIsExpressed(chromosomeA[i], chromosomeB[i]) then
+                  gray[i] := 1
+               else
+                  gray[i] := 0
+               end
+            end;
+            GrayToBinary(gray, binary);
+            BinaryToInt(binary, int);
+            IntToNumber(int, phenotype)
+         else
+            phenotype := 0
+         end;
+         return phenotype
+      end Decode;
+
+      procedure {private} NumberToInt (n : N.Number; var int : integer{64});
+      var
+         range : N.Number;
+      begin
+         (* (minPhenotype)  0 <= range <= fullRange  (maxPhenotype) *)
+         range := fullRange*((n - minPhenotype)/(maxPhenotype - minPhenotype));
+         int := integer(range.Get(), 64);
+         (* address possible roundoff discrepancies *)
+         if int < 0 then
+            int := 0
+         end;
+         if int > fullRange then
+            int := integer(fullRange.Get(), 64)
+         end
+      end NumberToInt;
+
+      procedure {public} Encode (phenotype : N.Number)
+         implements Chromosome.Encode;
+      var
+         binary, gray : BinaryArray;
+         i, random : integer;
+         int : integer{64};
+      begin
+         binary := new BinaryArray(Length());
+         gray   := new BinaryArray(Length());
+         NumberToInt(phenotype, int);
+         IntToBinary(int, binary);
+         BinaryToGray(binary, gray);
+         (* keeps decoding probability at 50% 1s and 50% 0s wrt Initialize *)
+         for i := 0 to Length()-1 do
+            random := S.RandomIntegerBetween(1, 6);
+            if gray[i] = 1 then
+               if random = 1 then
+                  chromosomeA[i] := dominant;
+                  chromosomeB[i] := dominant
+               elsif random = 2 then
+                  chromosomeA[i] := dominant;
+                  chromosomeB[i] := recessive
+               elsif random = 3 then
+                  chromosomeA[i] := dominant;
+                  chromosomeB[i] := dominantRecessive
+               elsif random = 4 then
+                  chromosomeA[i] := dominantRecessive;
+                  chromosomeB[i] := dominantRecessive
+               elsif random = 5 then
+                  chromosomeA[i] := dominantRecessive;
+                  chromosomeB[i] := dominant
+               else (* random = 6 *)
+                  chromosomeA[i] := recessive;
+                  chromosomeB[i] := dominant
+               end
+            else
+               if random = 1 then
+                  chromosomeA[i] := recessive;
+                  chromosomeB[i] := dominantRecessive
+               elsif random = 2 then
+                  chromosomeA[i] := dominantRecessive;
+                  chromosomeB[i] := recessive
+               else (* random = 3, 4, 5 or 6 *)
+                  chromosomeA[i] := recessive;
+                  chromosomeB[i] := recessive
+               end
+            end
+         end
+      end Encode;
+
+      (* tests for gene expression, not the actual allele of the genes *)
+      procedure {public} IsEqualTo (c : object{Chromosome}) : boolean
+         implements Chromosome.IsEqualTo;
+      var
+         d : Diploid;
+         i : integer;
+      begin
+         if c is Diploid then
+            d := Diploid(c);
+            if Length() = d.Length() then
+               i := 0;
+               loop
+                  if i = Length() then
+                     exit
+                  end;
+                  if GeneIsExpressed(chromosomeA[i], chromosomeB[i]) #
+                     GeneIsExpressed(d.chromosomeA[i], d.chromosomeB[i]) then
+                     return false
+                  end;
+                  inc(i)
+               end;
+               return true
+            else
+               return false
+            end
+         else
+            return false
+         end
+      end IsEqualTo;
+
+   begin
+      dominant.Parse("1");
+      dominantRecessive.Parse("%");
+      recessive.Parse("0")
+   end Diploid;
+
+   operator {public} "=" (l, r : Haploid) : boolean;
+   begin
+      return l.IsEqualTo(r)
+   end "=";
+
+   operator {public} "#" (l, r : Haploid) : boolean;
+   begin
+      return ~l.IsEqualTo(r)
+   end "#";
+
+   operator {public} "=" (l, r : Diploid) : boolean;
+   begin
+      return l.IsEqualTo(r)
+   end "=";
+
+   operator {public} "#" (l, r : Diploid) : boolean;
+   begin
+      return ~l.IsEqualTo(r)
+   end "#";
+
+begin
+   evenOdds := 0.5;
+   maxPower := max(integer{64}) div 2
+end Chromosomes.

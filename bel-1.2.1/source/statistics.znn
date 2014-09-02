@@ -1,0 +1,618 @@
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(*       BBBB      EEEEE     L         The                                    *)
+(*       B   B     E         L           BIOLOGICAL                           *)
+(*       BBBB      EEE       L           ENGINEERING                          *)
+(*       B    B    E         L           LABORATORY                           *)
+(*       BBBBB     EEEEEE    LLLLLL        @ Saginaw Valley State University  *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Copyright 2008-2010, Alan D. Freed                                         *)
+(*                                                                            *)
+(* This file is part of the BEL suite of .NET/mono libraries.                 *)
+(*                                                                            *)
+(* BEL is a free software: you can redistribute it and/or modify it under the *)
+(* terms of the GNU Lesser General Public License as published by the Free    *)
+(* Software Foundation, either version 3 of the License, or (at your option)  *)
+(* any later version.                                                         *)
+(*                                                                            *)
+(* BEL is distributed in the hope that it will be useful, but WITHOUT ANY     *)
+(* WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS  *)
+(* FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License for   *)
+(* more details.                                                              *)
+(*                                                                            *)
+(* You should have received a copy of the GNU Lesser General Public License   *)
+(* along with BEL.  If not, see <http://www.gnu.org/licenses/>.               *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* This file is 1 of 7 creating a genetic algorithm for parameter estimation  *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* SGA stands for Simple Genetic Algorithm.  SGA was originally written in    *)
+(* Pascal, and is nicely documented in the textbook:                          *)
+(*   Goldberg, D. E., "Genetic Algorithms in search, optimization & machine   *)
+(*                     learning," Addison-Wesley, Boston, 1989.               *)
+(* David Goldberg's original SGA code carries the following copywrite notice: *)
+(*   { A Simple Genetic Algorithm - SGA - v1.0 }                              *)
+(*   { (c)   David Edward Goldberg  1986       }                              *)
+(*   {       All Rights Reserved               }                              *)
+(* This reinterpretation of Goldberg's original SGA is written in Zonnon - a  *)
+(* direct decendent of Pascal.  It is a complete rewrite of SGA.  In this     *)
+(* rewrite, efforts have been made to keep true to the spirit of Goldberg's   *)
+(* original SGA algorithms, introducing some enhancements since its printing. *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Types                                                                      *)
+(*   LeastSquares : an enumerated type used to select method of least squares *)
+(*      linear        : classic linear least squares - V = sigma^2 I          *)
+(*      generalized   : generalized least squares    - V = sigma^2_i  I_{ii}  *)
+(*      nonlinear     : non-linear least squares     - V = sample covariance  *)
+(*   Model        : procedure interface to user-definable model of interest   *)
+(*      input  array  : the model parameters: fixed and vary                  *)
+(*             length : the number of all model parameters   P                *)
+(*      input  matrix : the control/independent variables                     *)
+(*             rows   : the number of controlled variables   C                *)
+(*             cols   : the number of experimental data      N                *)
+(*      input  array  : the index # @ end of each experiment                  *)
+(*             length : the number of experiments            E                *)
+(*      return matrix : the response/dependent variables                      *)
+(*             rows   : the number of response variables     R                *)
+(*             cols   : the number of experimental data      N                *)
+(* Procedures                                                                 *)
+(*   FlipHeads            : biased coin toss                                  *)
+(*   RandomIntegerBetween : a randomly selected integer over an interval      *)
+(*   Configure            : prepare statistical procedures for optimization   *)
+(*   DataFitAgainst       : the experimental data fields used in optimization *)
+(*   Theory               : the model's response to the experimental data     *)
+(*   Residuals            : the normalized residual errors of optimization    *)
+(*   Covariance           : the covariance matrix                             *)
+(*   RSquared             : the R^2 correlation of determination statistic    *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Other references:                                                          *)
+(*   Bard, Y., "Nonlinear Parameter Estimation", Academic Press, NY, 1974.    *)
+(*   Buse, A., Goodness of fit in generalized least squares estimation,       *)
+(*             American Statistician, vol. 27, 1973, 106-108.                 *)
+(*   Goldberg, D.E., "The Design of Innovation: Lessons learned from the      *)
+(*             competent genetic algorithms", Vol. 7 of: "Genetic Algorithms  *)
+(*             and Evoluationary Computations", Klewer, Boston, 2002.         *)
+(*   Sivanandam, S.N. and Deepa, S.N., "Introduction to Genetic Algoritms",   *)
+(*             Springer, Berlin, 2008.                                        *)
+(*   Venzon, D.J. and Moolgavkar, S.H., A method for computing profile-       *)
+(*             likelihood-based confidence intervals, Applied Statistician,   *)
+(*             vol. 37, 1988, 87-94.                                          *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+
+module {public} Bel.GA.Statistics;
+
+   import
+      System.Int32  as Int,
+      System.Random as RG,
+      Bel.IO.Log as L,
+      Bel.MF.Numbers  as N,
+      Bel.MF.Arrays   as A,
+      Bel.MF.Matrices as M,
+      Bel.MATH.Functions      as Fn,
+      Bel.MATH.Distributions  as D,
+      Bel.MATH.Interpolations as I,
+      Bel.MATH.LinearAlgebra  as LA;
+
+
+   type {private}
+      BooleanArray = array * of boolean;
+      IntegerArray = array * of integer;
+
+
+   type {public}
+      LeastSquares = (linear, generalized, nonlinear);
+      Model = procedure (A.Array; M.Matrix; A.Array) : M.Matrix;
+               (* input  array  : the model parameters: fixed and vary *)
+               (*        length : the number of all model parameters P *)
+               (* input  matrix : the control/independent variables    *)
+               (*        rows   : the number of controlled variables C *)
+               (*        cols   : the number of experimental data    N *)
+               (* input  array  : the index # @ end of each experiment *)
+               (*        length : the number of experiments          E *)
+               (* return matrix : the response/dependent variables     *)
+               (*        rows   : the number of response variables   R *)
+               (*        cols   : the number of experimental data    N *)
+
+
+   var {private}
+      expCtl, expIn, expOut, sigMtx : M.Matrix;
+      dimC, dimE, dimO, nCoef : integer;
+      endsAt, expStdDev : A.Array;
+      finishesAt : IntegerArray;
+      model : Model;
+      randomGenerator : RG;
+      use : BooleanArray;
+      zero : N.Number;
+   var {public, immutable}
+      dimN, dimR : integer;
+      ls : LeastSquares;
+
+   (* a biased (by 'probabilityOfHeads' odds) random flip of a coin *)
+   procedure {public} FlipHeads (probabilityOfHeads : N.Number) : boolean;
+   var
+      flip : boolean;
+      random : N.Number;
+   begin
+      random := randomGenerator.NextDouble();
+      flip := (probabilityOfHeads >= random);
+      return flip
+   end FlipHeads;
+
+   (* select a random integer from the interval [lowValue, highValue] *)
+   procedure {public} RandomIntegerBetween
+                      (lowValue, highValue : integer) : integer;
+   var
+      loInt, hiInt : Int;
+      random : integer;
+   begin
+      loInt  := lowValue;
+      hiInt  := highValue;
+      random := randomGenerator.Next(loInt, hiInt);
+      return random
+   end RandomIntegerBetween;
+
+   (* prepare the optimizer for use *)
+   (* the [0] element of these IntegerArrays is not to be used *)
+   procedure {public} Configure (expControl, expInput, expOutput : M.Matrix;
+                                 expEndsAtIndex, decimateTo : A.Array;
+                                 method : LeastSquares;
+                                 numericalModel : Model;
+                                 solveModelWithDecimatedDataOnly : boolean);
+   var
+      beginsAt, c, curve, e, i, j, n, ne, o, r : integer;
+      curveLength, maxIn, maxOut : M.Matrix;
+      expMean : A.Array;
+      length, segment, sum, x, y : N.Number;
+      re : real{64};
+   begin
+      if expInput.Rows() = expOutput.Rows() then
+         (* the number of response variables *)
+         dimR := expOutput.Rows()
+      else
+         L.Message("expInput.Rows # expOutput.Rows");
+         L.ErrorMessage(315,20, "Bel.GA.Statistics.Configure")
+      end;
+      if (expControl.Columns() = expInput.Columns()) &
+         (expControl.Columns() = expOutput.Columns()) then
+         (* the number of experimental observations *)
+         dimC := expControl.Rows();
+         dimO := expOutput.Columns()
+      else
+         if expControl.Columns() # expInput.Columns() then
+            L.Message("expControl.Columns # expInput.Columns")
+         end;
+         if expControl.Columns() # expOutput.Columns() then
+            L.Message("expControl.Columns # expOutput.Columns")
+         end;
+         if expInput.Columns() # expOutput.Columns() then
+            L.Message("expInput.Columns # expOutput.Columns")
+         end;
+         L.ErrorMessage(315,20, "Bel.GA.Statistics.Configure")
+      end;
+      if expEndsAtIndex.Length() = decimateTo.Length() then
+         (* the number of experiments *)
+         dimE := expEndsAtIndex.Length()
+      else
+         L.Message("expEndsAtIndex.Length() # decimateTo.Length()");
+         L.ErrorMessage(315,20, "Bel.GA.Statistics.Configure")
+      end;
+      if expEndsAtIndex[dimE] # dimO then
+         writeln("expEndsAtIndex[<last>] = " + expEndsAtIndex[dimE].Typeset());
+         x := expOutput.Columns();
+         writeln("expOutput.Columns      = " + x.Typeset());
+         L.Message("expEndsAtIndex[<last>] # expOutput.Columns");
+         L.ErrorMessage(315,20, "Bel.GA.Statistics.Configure")
+      end;
+      ls := method;
+      model := numericalModel;
+      if model = nil then
+         L.Message("A model was not assigned.");
+         L.ErrorMessage(440,20, "Bel.GA.Statistics.Configure")
+      end;
+      finishesAt := new IntegerArray(dimE+1);
+      finishesAt[0] := 0;
+      for e := 1 to dimE do
+         re := expEndsAtIndex[e].Get();
+         finishesAt[e] := integer(re)
+      end;
+      (* decimate the data to reduce the work required by the optimizer *)
+      (* find the maximums for both axes of every input/output curve *)
+      beginsAt := 1;
+      maxIn.Create(dimR, dimE);
+      maxOut.Create(dimR, dimE);
+      for e := 1 to dimE do
+         for r := 1 to dimR do
+            maxIn[r,e] := 0;
+            maxOut[r,e] := 0;
+            for n := beginsAt to finishesAt[e] do
+               maxIn[r,e]  := Fn.Max(maxIn[r,e], Fn.Abs(expInput[r,n]));
+               maxOut[r,e] := Fn.Max(maxOut[r,e], Fn.Abs(expOutput[r,n]))
+            end
+         end;
+         beginsAt := finishesAt[e] + 1
+      end;
+      (* find the arc length of each input/output curve for each experiment *)
+      beginsAt := 1;
+      curveLength.Create(dimR, dimE);
+      for e := 1 to dimE do
+         for r := 1 to dimR do
+            length := 0;
+            for n := beginsAt+1 to finishesAt[e] do
+               x := (expInput[r,n]  - expInput[r,n-1]) /maxIn[r,e];
+               y := (expOutput[r,n] - expOutput[r,n-1])/maxOut[r,e];
+               length := length + Fn.Pythag(x,y)
+            end;
+            curveLength[r,e] := length
+         end;
+         beginsAt := finishesAt[e] + 1
+      end;
+      (* determine which data are to be used and which are to be decimated *)
+      use := new BooleanArray(dimO+1);
+      use[0] := false;
+      n := 0;
+      o := 0;
+      beginsAt := 1;
+      for e := 1 to dimE do
+         if (finishesAt[e] - beginsAt + 1) > decimateTo[e] then
+            (* decimate the data *)
+            curve := 0;
+            length := 0;
+            for r := 1 to dimR do
+               if curveLength[r,e] > length then
+                  length := curveLength[r,e];
+                  curve := r
+               end
+            end;
+            segment := length/(decimateTo[e] - 1);
+            length := 0;
+            ne := 0;
+            for i := beginsAt to finishesAt[e] do
+               inc(o);
+               if i = beginsAt then
+                  (* use the first data point from the experiment *)
+                  inc(n);
+                  inc(ne);
+                  use[o] := true
+               elsif (i = finishesAt[e]) & (ne < decimateTo[e]) then
+                  (* use the last data point from the experiment *)
+                  inc(n);
+                  use[o] := true
+               else
+                  x := (expInput[curve,i]  - expInput[curve,i-1])
+                     / maxIn[curve,e];
+                  y := (expOutput[curve,i]
+                     - expOutput[curve,i-1])/maxOut[curve,e];
+                  length := length + Fn.Pythag(x,y);
+                  if length < segment then
+                     use[o] := false
+                  else
+                     if ne < decimateTo[e] then
+                        inc(n);
+                        inc(ne);
+                        length := 0;
+                        if odd(n) or (length = segment) then
+                           use[o] := true
+                        else
+                           if ~use[o-1] then
+                              dec(o);
+                              dec(i);
+                              use[o] := true
+                           else
+                              use[o] := true
+                           end
+                        end
+                     end
+                  end
+               end
+            end
+         else
+            (* use all data points *)
+            for i := beginsAt to finishesAt[e] do
+               inc(o);
+               inc(n);
+               use[o] := true
+            end
+         end;
+         beginsAt := finishesAt[e] + 1
+      end;
+      dimN := n;
+      if solveModelWithDecimatedDataOnly then
+         expCtl.Create(dimC, dimN);
+         expIn.Create(dimR, dimN);
+         expOut.Create(dimR, dimN);
+         endsAt.Create(dimE);
+         n := 0;
+         beginsAt := 1;
+         for e := 1 to dimE do
+            for o := beginsAt to finishesAt[e] do
+               if use[o] then
+                  inc(n);
+                  for c := 1 to dimC do
+                     expCtl[c,n] := expControl[c,o]
+                  end;
+                  for r := 1 to dimR do
+                     expIn[r,n]  := expInput[r,o];
+                     expOut[r,n] := expOutput[r,o]
+                  end
+               end
+            end;
+            endsAt[e] := n;
+            beginsAt := finishesAt[e] + 1
+         end;
+         dimO := dimN;
+         for e := 1 to dimE do
+            re := endsAt[e].Get();
+            finishesAt[e] := integer(re)
+         end;
+         beginsAt := 1;
+         for e := 1 to dimE do
+            for r := 1 to dimR do
+               maxOut[r,e] := 0;
+               for n := beginsAt to finishesAt[e] do
+                  maxOut[r,e] := Fn.Max(maxOut[r,e], Fn.Abs(expOut[r,n]))
+               end
+            end;
+            beginsAt := finishesAt[e] + 1
+         end;
+         use := new BooleanArray(dimN+1);
+         use[0] := false;
+         for n := 1 to dimN do
+            use[n] := true
+         end
+      else
+         expCtl := expControl;
+         expIn  := expInput;
+         expOut := expOutput;
+         endsAt := expEndsAtIndex
+      end;
+      (* compute the experimental means and standard deviations *)
+      expMean.Create(dimR);
+      for r := 1 to dimR do
+         sum := 0;
+         for o := 1 to dimO do
+            if use[o] then
+               sum := sum + expOut[r,o]
+            end
+         end;
+         expMean[r] := sum/dimN
+      end;
+      expStdDev.Create(dimR);
+      for r := 1 to dimR do
+         sum := 0;
+         for o := 1 to dimO do
+            if use[o] then
+               x := expOut[r,o] - expMean[r];
+               sum := sum + x*x
+            end
+         end;
+         expStdDev[r] := Fn.Sqrt(sum)/(dimN-1)
+      end;
+      (* compute the denominator info for computing R^2 *)
+      n := 0;
+      sigMtx.Create(dimR, dimN);
+      for o := 1 to dimO do
+         if use[o] then
+            inc(n);
+            for r := 1 to dimR do
+               sigMtx[r,n] := (expOut[r,o] - expMean[r])/expStdDev[r]
+            end
+         end
+      end;
+      expMean.Nullify;
+      curveLength.Nullify;
+      maxIn.Nullify
+   end Configure;
+
+   procedure {public} DataFitAgainst (var input, output : M.Matrix;
+                                      var expEndsAtIndex : A.Array);
+   var
+      e, n, o, r : integer;
+   begin
+      input.Create(dimR, dimN);
+      output.Create(dimR, dimN);
+      n := 0;
+      for o := 1 to dimO do
+         if use[o] then
+            inc(n);
+            for r := 1 to dimR do
+               input[r,n]  := expIn[r,o];
+               output[r,n] := expOut[r,o]
+            end
+         end
+      end;
+      expEndsAtIndex := endsAt
+   end DataFitAgainst;
+
+   procedure {public} Residuals (parameters : A.Array) : M.Matrix;
+   var
+      n, o, r : integer;
+      res, thy : M.Matrix;
+   begin
+      res.Create(dimR, dimN);
+      thy := model(parameters, expCtl, endsAt);
+      n := 0;
+      for o := 1 to dimO do
+         if use[o] then
+            inc(n);
+            for r := 1 to dimR do
+               res[r,n] := (expOut[r,o] - thy[r,o])/expStdDev[r]
+            end
+         end
+      end;
+      thy.Nullify;
+      return res
+   end Residuals;
+
+   procedure {public} Theory (parameters : A.Array) : M.Matrix;
+   var
+      n, o, r : integer;
+      theory, thy : M.Matrix;
+   begin
+      theory.Create(dimR, dimN);
+      thy := model(parameters, expCtl, endsAt);
+      n := 0;
+      for o := 1 to dimO do
+         if use[o] then
+            inc(n);
+            for r := 1 to dimR do
+               theory[r,n] := thy[r,o]
+            end
+         end
+      end;
+      thy.Nullify;
+      return theory
+   end Theory;
+
+   procedure {public} Covariance (parameters : A.Array) : M.Matrix;
+   var
+      cov, res : M.Matrix;
+      i, j, n, r : integer;
+      mean : A.Array;
+      sigma2, sum : N.Number;
+   begin
+      res := Residuals(parameters);
+      mean.Create(dimR);
+      for r := 1 to dimR do
+         sum := 0;
+         for n := 1 to dimN do
+            sum := sum + res[r,n]
+         end;
+         mean[r] := sum/dimN
+      end;
+      cov.Create(dimR, dimR);
+      case ls of
+         LeastSquares.linear :
+         sum := zero;
+         for r := 1 to dimR do
+            for n := 1 to dimN do
+               sum := sum + (res[r,n] - mean[r])*(res[r,n] - mean[r])
+            end
+         end;
+         sigma2 := sum/(dimR*dimN-1);
+         for r := 1 to dimR do
+            cov[r,r] := sigma2
+         end
+      |  LeastSquares.generalized :
+         for r := 1 to dimR do
+            sum := 0;
+            for n := 1 to dimN do
+               sum := sum + (res[r,n] - mean[r])*(res[r,n] - mean[r])
+            end;
+            sigma2 := sum/(dimN-1);
+            cov[r,r] := sigma2
+         end
+      else (* nonlinear *)
+         for i := 1 to dimR do
+            for j := i to dimR do
+               sum := 0;
+               for n := 1 to dimN do
+                  sum := sum + (res[i,n] - mean[i])*(res[j,n] - mean[j])
+               end;
+               sum := dimR*sum;
+               cov[i,j] := sum/(dimR*dimN-1);
+               if i # j then
+                  cov[j,i] := cov[i,j]
+               end
+            end
+         end
+      end;
+      mean.Nullify;
+      res.Nullify;
+      return cov
+   end Covariance;
+
+   procedure {public} RSquared (parameters : A.Array) : N.Number;
+   var
+      cov, inv, res, thy : M.Matrix;
+      i, j, n, o, r : integer;
+      lu : LA.Lu;
+      mean : A.Array;
+      noise, r2, sigma2, signal, sum : N.Number;
+   begin
+      (* calling Residuals and Covariance does twice the work *)
+      (* so, i) compute the residual matrix *)
+      res.Create(dimR, dimN);
+      thy := model(parameters, expCtl, endsAt);
+      n := 0;
+      for o := 1 to dimO do
+         if use[o] then
+            inc(n);
+            for r := 1 to dimR do
+               res[r,n] := (expOut[r,o] - thy[r,o])/expStdDev[r]
+            end
+         end
+      end;
+      (* ii) compute the covariance matrix *)
+      mean.Create(dimR);
+      for r := 1 to dimR do
+         sum := 0;
+         for n := 1 to dimN do
+            sum := sum + res[r,n]
+         end;
+         mean[r] := sum/dimN
+      end;
+      cov.Create(dimR, dimR);
+      case ls of
+         LeastSquares.linear :
+         sum := zero;
+         for r := 1 to dimR do
+            for n := 1 to dimN do
+               sum := sum + (res[r,n] - mean[r])*(res[r,n] - mean[r])
+            end
+         end;
+         sigma2 := sum/(dimR*dimN-1);
+         for r := 1 to dimR do
+            cov[r,r] := sigma2
+         end
+      |  LeastSquares.generalized :
+         for r := 1 to dimR do
+            sum := 0;
+            for n := 1 to dimN do
+               sum := sum + (res[r,n] - mean[r])*(res[r,n] - mean[r])
+            end;
+            sigma2 := sum/(dimN-1);
+            cov[r,r] := sigma2
+         end
+      else (* nonlinear *)
+         for i := 1 to dimR do
+            for j := i to dimR do
+               sum := 0;
+               for n := 1 to dimN do
+                  sum := sum + (res[i,n] - mean[i])*(res[j,n] - mean[j])
+               end;
+               sum := dimR*sum;
+               cov[i,j] := sum/(dimR*dimN-1);
+               if i # j then
+                  cov[j,i] := cov[i,j]
+               end
+            end
+         end
+      end;
+      (* and iii) compute R^2 *)
+      if (ls = LeastSquares.nonlinear) & (dimR > 1) then
+         lu.Factorize(cov);
+         inv := lu.Inverse();
+         LA.RefineInverse(cov, inv);
+         lu.Initialize
+      else
+         inv.Create(dimR, dimR);
+         for r := 1 to dimR do
+            inv[r,r] := 1/cov[r,r]
+         end
+      end;
+      signal := sigMtx.TransposeDoubleDot(inv.Dot(sigMtx));
+      noise := res.TransposeDoubleDot(inv.Dot(res));
+      r2 := (signal - noise)/signal;
+      if (r2 < 0) or (r2 > 1) then
+         r2 := 0
+      end;
+      cov.Nullify;
+      inv.Nullify;
+      mean.Nullify;
+      res.Nullify;
+      thy.Nullify;
+      return r2
+   end RSquared;
+
+begin
+   zero := 0;
+   randomGenerator := new RG()
+end Statistics.

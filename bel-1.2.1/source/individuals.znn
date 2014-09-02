@@ -1,0 +1,272 @@
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(*       BBBB      EEEEE     L         The                                    *)
+(*       B   B     E         L           BIOLOGICAL                           *)
+(*       BBBB      EEE       L           ENGINEERING                          *)
+(*       B    B    E         L           LABORATORY                           *)
+(*       BBBBB     EEEEEE    LLLLLL        @ Saginaw Valley State University  *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Copyright 2008-2010, Alan D. Freed                                         *)
+(*                                                                            *)
+(* This file is part of the BEL suite of .NET/mono libraries.                 *)
+(*                                                                            *)
+(* BEL is a free software: you can redistribute it and/or modify it under the *)
+(* terms of the GNU Lesser General Public License as published by the Free    *)
+(* Software Foundation, either version 3 of the License, or (at your option)  *)
+(* any later version.                                                         *)
+(*                                                                            *)
+(* BEL is distributed in the hope that it will be useful, but WITHOUT ANY     *)
+(* WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS  *)
+(* FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License for   *)
+(* more details.                                                              *)
+(*                                                                            *)
+(* You should have received a copy of the GNU Lesser General Public License   *)
+(* along with BEL.  If not, see <http://www.gnu.org/licenses/>.               *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* This file is 5 of 7 creating a genetic algorithm for parameter estimation  *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* SGA stands for Simple Genetic Algorithm.  SGA was originally written in    *)
+(* Pascal, and is nicely documented in the textbook:                          *)
+(*   Goldberg, D. E., "Genetic Algorithms in search, optimization & machine   *)
+(*                     learning," Addison-Wesley, Boston, 1989.               *)
+(* David Goldberg's original SGA code carries the following copywrite notice: *)
+(*   { A Simple Genetic Algorithm - SGA - v1.0 }                              *)
+(*   { (c)   David Edward Goldberg  1986       }                              *)
+(*   {       All Rights Reserved               }                              *)
+(* This reinterpretation of Goldberg's original SGA is written in Zonnon - a  *)
+(* direct decendent of Pascal.  It is a complete rewrite of SGA.  In this     *)
+(* rewrite, efforts have been made to keep true to the spirit of Goldberg's   *)
+(* original SGA algorithms.                                                   *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Type                                                                       *)
+(*   Lineage                                                                  *)
+(*      Variables : birthID   - like the individual's social security number  *)
+(*                : fitness   - measure of how strong/good the individual is  *)
+(*                : parameters - the model parameters, or phenotype           *)
+(*                : parentA   - one of the two parents of the individual      *)
+(*                : parentB   - the other of the two parents                  *)
+(*   Individual                                                               *)
+(*      Variable  : lineage   - an instance of Lineage - the geneology        *)
+(*      Methods   : Equals    - determines if two individuals are clones      *)
+(*                : Procreate - creates the first generation  of individuals  *)
+(*                : Conceive  - creates all ohter generations of individuals  *)
+(*                : Get       - retrieves the genotype held by the individual *)
+(*                : Mutate    - scans over the genome for possible mutations  *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+module {public} Bel.GA.Individuals;
+
+   import
+      System.IO.BinaryReader as BinaryReader,
+      System.IO.BinaryWriter as BinaryWriter,
+      System.Int32 as Int,
+      Bel.MF.Numbers as N,
+      Bel.MF.Arrays  as A,
+      Bel.GA.Statistics as S,
+      Bel.GA.Genomes    as G,
+      Bel.Object as Object;
+
+   var {private}
+      birthNumber : integer;
+
+
+   type {public, value} Lineage = object implements Object
+
+      var {public}
+         birthID : integer;
+         fitness : N.Number;
+         parameters : A.Array;
+
+      procedure {public} Initialize
+         implements Object.Initialize;
+      begin
+         birthID := 0;
+         fitness := 0;
+         parameters.Initialize
+      end Initialize;
+
+      procedure {public} Nullify
+         implements Object.Nullify;
+      begin
+         birthID := 0;
+         fitness := 0;
+         parameters.Nullify
+      end Nullify;
+
+      procedure {public} Clone () : object{Object}
+         implements Object.Clone;
+      var
+         c : Lineage;
+         o : object{Object};
+      begin
+         c.Initialize;
+         o := Object(c);
+         return o
+      end Clone;
+
+      procedure {public} Load (br : BinaryReader)
+         implements Object.Load;
+      var
+         i : integer;
+         int : Int;
+         s : string;
+      begin
+         int := br.ReadInt32();
+         birthID := int;
+         fitness.Load(br);
+         parameters.Load(br)
+      end Load;
+
+      procedure {public} Store (bw : BinaryWriter)
+         implements Object.Store;
+      var
+         int : Int;
+      begin
+         int := birthID;
+         bw.Write(int);
+         bw.Flush;
+         fitness.Store(bw);
+         parameters.Store(bw)
+      end Store;
+
+   begin
+      Initialize
+   end Lineage;
+
+
+   type {private}
+      BooleanArray = array * of boolean;
+
+
+   type {public, ref} Individual = object
+
+      var {private}
+         fixParam : A.Array;
+         genome : G.Genome;
+         varParam : BooleanArray;
+      var {public, immutable}
+         lineage : Lineage;
+
+      procedure {public} Initialize (fixedParameters : A.Array;
+                                     varyParameters  : array * of boolean);
+      var
+         i : integer;
+      begin
+         varParam := new BooleanArray(len(varyParameters));
+         varParam[0] := false;
+         for i := 1 to len(varyParameters)-1 do
+            varParam[i] := varyParameters[i]
+         end;
+         fixParam.Create(fixedParameters.Length());
+         for i := 1 to fixedParameters.Length() do
+            fixParam[i] := fixedParameters[i]
+         end;
+         lineage.Initialize
+      end Initialize;
+
+      procedure {public} Get () : G.Genome;
+      begin
+         return genome.Clone()
+      end Get;
+
+      procedure {public} Equals (i : Individual) : boolean;
+      begin
+         return (genome = i.genome)
+      end Equals;
+
+      procedure {private} AssignParameters;
+      var
+         estParam : A.Array;
+         i, length, nf, nv : integer;
+      begin
+         estParam := genome.Decode();
+         length := fixParam.Length() + estParam.Length();
+         lineage.parameters.Create(length);
+         nf := 0;
+         nv := 0;
+         for i := 1 to length do
+            if varParam[i] then
+               inc(nv);
+               lineage.parameters[i] := estParam[nv]
+            else
+               inc(nf);
+               lineage.parameters[i] := fixParam[nf]
+            end
+         end;
+         estParam.Nullify
+      end AssignParameters;
+
+      procedure {public} Procreate (minParameters, maxParameters : A.Array;
+                                    numberOfSignificantFigures : integer;
+                                    chromosomeType : G.ChromosomeType);
+      begin
+         genome := new G.Genome;
+         genome.Initialize(minParameters, maxParameters,
+                           numberOfSignificantFigures, chromosomeType);
+         AssignParameters;
+         lineage.fitness := S.RSquared(lineage.parameters);
+         if lineage.fitness = 0 then
+            Procreate(minParameters, maxParameters,
+                      numberOfSignificantFigures, chromosomeType)
+         end;
+         inc(birthNumber);
+         lineage.birthID := birthNumber
+      end Procreate;
+
+      procedure {public} Alien (parameters,
+                                minParameters, maxParameters : A.Array;
+                                numberOfSignificantFigures : integer;
+                                chromosomeType : G.ChromosomeType);
+      begin
+         genome := new G.Genome;
+         genome.Initialize(minParameters, maxParameters,
+                           numberOfSignificantFigures, chromosomeType);
+         genome.Encode(parameters);
+         AssignParameters;
+         lineage.fitness := S.RSquared(lineage.parameters);
+         if lineage.fitness = 0 then
+            Procreate(minParameters, maxParameters,
+                      numberOfSignificantFigures, chromosomeType)
+         else
+            inc(birthNumber);
+            lineage.birthID := birthNumber
+         end
+      end Alien;
+
+      procedure {public} Conceive (genotype : G.Genome;
+                                   minParameters, maxParameters : A.Array;
+                                   numberOfSignificantFigures : integer;
+                                   chromosomeType : G.ChromosomeType);
+      begin
+         genome := genotype;
+         AssignParameters;
+         lineage.fitness := S.RSquared(lineage.parameters);
+         if lineage.fitness = 0 then
+            Procreate(minParameters, maxParameters,
+                      numberOfSignificantFigures, chromosomeType)
+         else
+            inc(birthNumber);
+            lineage.birthID := birthNumber
+         end
+      end Conceive;
+
+      procedure {public} Mutate (mutationProbability : N.Number;
+                                 var numberOfMutations : integer);
+      begin
+         genome.Mutate(mutationProbability, numberOfMutations)
+      end Mutate;
+
+   begin
+   end Individual;
+
+   operator {public} "=" (l, r : Individual) : boolean;
+   begin
+      return l.Equals(r)
+   end "=";
+
+   operator {public} "#" (l, r : Individual) : boolean;
+   begin
+      return ~l.Equals(r)
+   end "#";
+
+begin
+   birthNumber := 0
+end Individuals.

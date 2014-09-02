@@ -1,0 +1,130 @@
+module {public} Main;
+
+   import
+      Bel.IO.Log      as L,
+      Bel.MF.Numbers  as N,
+      Bel.MF.Arrays   as A,
+      Bel.MF.Matrices as M,
+      Bel.MATH.Distributions  as PD,
+      Bel.GA.Genomes          as G,
+      Bel.GA.GeneticAlgorithm as GA,
+      Bel.GA.Statistics       as S;
+
+   procedure {public} ExpData (var control, response : M.Matrix);
+   var
+      x, y : N.Number;
+   begin {locked}
+      control.Create(1,7);
+      response.Create(1,7);
+      x := -3;
+      control[1,1] := x;
+      x := -2;
+      control[1,2] := x;
+      x := -1;
+      control[1,3] := x;
+      x := 0;
+      control[1,4] := x;
+      x := 1;
+      control[1,5] := x;
+      x := 2;
+      control[1,6] := x;
+      x := 3;
+      control[1,7] := x;
+      y := -4.0;
+      response[1,1] := y;
+      y := -1.9;
+      response[1,2] := y;
+      y := -0.55;
+      response[1,3] := y;
+      y := 0.05;
+      response[1,4] := y;
+      y := 0.65;
+      response[1,5] := y;
+      y := 1.9;
+      response[1,6] := y;
+      y := 4.3;
+      response[1,7] := y
+   end ExpData;
+
+   procedure {public} Model (parameters : A.Array; inputs : M.Matrix;
+                             endsAt : A.Array) : M.Matrix;
+   var
+      i : integer;
+      outputs : M.Matrix;
+      x : N.Number;
+   begin {locked}
+      outputs.Create(1, 7);
+      for i := 1 to 7 do
+         x := inputs[1,i];
+         outputs[1,i] := parameters[1]
+                       + parameters[2] * x
+                       + parameters[3] * (x*x*x)
+      end;
+      return outputs
+   end Model;
+
+   procedure {public} Bounds (var alienPar, minPar, maxPar : A.Array);
+   var
+      n : N.Number;
+   begin {locked}
+      alienPar.Create(3);
+      n := 0;
+      alienPar[1] := n;
+      n := 0.45;
+      alienPar[2] := n;
+      n := 0.125;
+      alienPar[3] := n;
+      minPar.Create(3);
+      n := -0.1;
+      minPar[1] := n;
+      n := -0.1;
+      minPar[2] := n;
+      n := 0;
+      minPar[3] := n;
+      maxPar.Create(3);
+      n := 0.1;
+      maxPar[1] := n;
+      n := 1.0;
+      maxPar[2] := n;
+      n := 0.25;
+      maxPar[3] := n
+   end Bounds;
+
+   procedure {public} Run;
+   var
+      alienPar, decimateTo, endsAt, fixPar, maxPar, minPar : A.Array;
+      control, response : M.Matrix;
+      file, fileName : string;
+      method : S.LeastSquares;
+      probImmigrant, probMutate, probXover : N.Number;
+      schemata, sigFig : integer;
+      varPar : array 4 of boolean;
+   begin
+      fileName := "testGeneticAlgorithm";
+      ExpData(control, response);
+      Bounds(alienPar, minPar, maxPar);
+      endsAt.Create(1);
+      endsAt[1] := 7;
+      decimateTo.Create(1);
+      decimateTo[1] := 7;
+      method := S.LeastSquares.linear;
+      varPar[0] := false;
+      varPar[1] := true;
+      varPar[2] := true;
+      varPar[3] := true;
+      sigFig := 4;
+      schemata := 6;
+      probXover := 0.75;
+      probMutate := 0.01;
+      probImmigrant := 0.005;
+      GA.Optimize(fileName, control, control, response, endsAt, decimateTo,
+                  method, Model, false, fixPar, alienPar, minPar, maxPar,
+                  varPar, schemata, sigFig, PD.Certainty.ninetyFive,
+                  probXover, probMutate, probImmigrant,
+                  G.ChromosomeType.haploid)
+   end Run;
+
+begin
+   Run;
+   L.Close
+end Main.

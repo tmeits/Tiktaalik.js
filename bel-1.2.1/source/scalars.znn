@@ -1,0 +1,3448 @@
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(*       BBBB      EEEEE     L         The                                    *)
+(*       B   B     E         L           BIOLOGICAL                           *)
+(*       BBBB      EEE       L           ENGINEERING                          *)
+(*       B    B    E         L           LABORATORY                           *)
+(*       BBBBB     EEEEEE    LLLLLL        @ Saginaw Valley State University  *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Copyright 2008-2010, Alan D. Freed                                         *)
+(*                                                                            *)
+(* This file is part of the BEL suite of .NET/mono libraries.                 *)
+(*                                                                            *)
+(* BEL is a free software: you can redistribute it and/or modify it under the *)
+(* terms of the GNU Lesser General Public License as published by the Free    *)
+(* Software Foundation, either version 3 of the License, or (at your option)  *)
+(* any later version.                                                         *)
+(*                                                                            *)
+(* BEL is distributed in the hope that it will be useful, but WITHOUT ANY     *)
+(* WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS  *)
+(* FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License for   *)
+(* more details.                                                              *)
+(*                                                                            *)
+(* You should have received a copy of the GNU Lesser General Public License   *)
+(* along with BEL.  If not, see <http://www.gnu.org/licenses/>.               *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Defines a physical scalar field, i.e., a number with physical units        *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Object      : Scalar      - a real number with units attached to it        *)
+(*    methods  : Initialize; - implements Bel.Object.Initialize               *)
+(*             : Nullify     - implements Bel.Object.Nullify                  *)
+(*             : Clone       - implements Bel.Object.Clone                    *)
+(*             : Load        - implements Bel.Object.Load                     *)
+(*             : Store       - implements Bel.Object.Store                    *)
+(*             : Negative    - implements Bel.Field.Negative                  *)
+(*             : Add         - implements Bel.Field.Add                       *)
+(*             : Subtract    - implements Bel.Field.Subtract                  *)
+(*             : Multiply    - implements Bel.Field.Multiply                  *)
+(*             : Divide      - implements Bel.Field.Divide                    *)
+(*             : Parse       - converts a string into a scalar                *)
+(*             : Typeset     - converts the scalar into a string              *)
+(*             : ToString    - convert scalar to string at specified accuracy *)
+(*             : Get         - returns the number part of a scalar field      *)
+(*             : Set         - assigns the number part to a scalar field      *)
+(*             : GetUnits    - returns the units part of a scalar field       *)
+(*             : SetUnits    - assigns the units part of a scalar field       *)
+(*             : IsFinite    - boolean test to see if it is finite valued     *)
+(*             : IsInfinite  - boolean test to see if it is +/- infinity      *)
+(*             : IsPositiveInfinity - boolean test to see if it is infinity   *)
+(*             : IsNegativeInfinity - boolean test to see if it is -infinity  *)
+(*             : IsNaN       - boolean test to see if it is not-a-number      *)
+(*             : IsVoid      - boolean check for absense of dimensionality    *)
+(*             : Equals             - boolean test for = between two scalars  *)
+(*             : NotEqual           - boolean test for # between two scalars  *)
+(*    (# a 'false' is returned for inequalities where units are not equal #)  *)
+(*             : LessThan           - boolean test for < between two scalars  *)
+(*             : LessThanOrEqual    - boolean test for <= between two scalars *)
+(*             : GreaterThan        - boolean test for > between two scalars  *)
+(*             : GreaterThanOrEqual - boolean test for >= between two scalars *)
+(*    (# arithmetic #)                                                        *)
+(*             : Reciprocal  - returns 1 divided by the scalar field          *)
+(*             : Power       - raises a dimensionless scalar to a real power  *)
+(*             : Magnitude   - returns the absolute value of a scalar         *)
+(* Operators   : :=                         - assignment operator             *)
+(*             : -                          - uniary  operator                *)
+(*             : = | # | < | <= | > | >=    - logical operators               *)
+(*             : + | - | * | /              - binary arithmetic operators     *)
+(*             : **                         - exponentiation operator         *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+
+module {public} Bel.PF.Scalars;
+
+   import
+      System.IO.BinaryReader as BinaryReader,
+      System.IO.BinaryWriter as BinaryWriter,
+      System.Byte   as Card8,   (* core type of  cardinal{8}  *)
+      System.UInt16 as Card16,  (* core type of  cardinal{16} *)
+      System.UInt32 as Card32,  (* core type of  cardinal{32} *)
+      System.UInt64 as Card64,  (* core type of  cardinal{64} *)
+      System.SByte  as Int8,    (* core type of  integer{8}   *)
+      System.Int16  as Int16,   (* core type of  integer{16}  *)
+      System.Int32  as Int32,   (* core type of  integer{32}  *)
+      System.Int64  as Int64,   (* core type of  integer{64}  *)
+      System.Single as Real32,  (* core type of  real{32}     *)
+      System.Double as Real64,  (* core type of  real{64}     *)
+      Bel.IO.Log as L,
+      Bel.MF.Numbers as N,
+      Bel.MATH.Functions as M,
+      Bel.PF.Units as U,
+      Bel.Object as Object,
+      Bel.Field  as Field;
+
+   type {private}
+      CharArray = array * of char;
+
+   var {private}
+      one : N.Number;
+
+   type {public, value} Scalar = object implements Field
+
+      var {private}
+         u : U.Si;
+         x : N.Number;
+
+      procedure {public} Initialize
+         implements Object.Initialize;
+      begin
+         u.Initialize;
+         x.Initialize
+      end Initialize;
+
+      procedure {public} Nullify
+         implements Object.Nullify;
+      begin
+         u.Nullify;
+         x.Nullify
+      end Nullify;
+
+      procedure {public} Clone () : object{Object}
+         implements Object.Clone;
+      var
+         o : object{Object};
+         s : Scalar;
+      begin
+         s.u := U.Si(u.Clone());
+         s.x := N.Number(x.Clone());
+         o := Object(s);
+         return o
+      end Clone;
+
+      procedure {public} Load (br : BinaryReader)
+         implements Object.Load;
+      begin
+         u.Load(br);
+         x.Load(br)
+      end Load;
+
+      procedure {public} Store (bw : BinaryWriter)
+         implements Object.Store;
+      begin
+         u.Store(bw);
+         x.Store(bw)
+      end Store;
+
+      procedure {public} Negative () : object{Field}
+         implements Field.Negative;
+      var
+         g : object{Field};
+         y : Scalar;
+      begin
+         y.u := u;
+         y.x := -x;
+         g := Field(y);
+         return g
+      end Negative;
+
+      procedure {public} Add (f : object{Field}) : object{Field}
+         implements Field.Add;
+      var
+         g : object{Field};
+         n : N.Number;
+         r, y : Scalar;
+      begin
+         y.Initialize;
+         if f is Scalar then
+            r := Scalar(f);
+            if u = r.u then
+               y.u := u;
+               y.x := x + r.x
+            else
+               L.WarningMessage(101,425, "Bel.PF.Scalars.Scalar.Add")
+            end
+         elsif f is N.Number then
+            n := N.Number(f);
+            if IsVoid() then
+               y.x := x + n
+            else
+               L.WarningMessage(101,425, "Bel.PF.Scalars.Scalar.Add")
+            end
+         else
+            L.WarningMessage(501,425, "Bel.PF.Scalars.Scalar.Add")
+         end;
+         g := Field(y);
+         return g
+      end Add;
+
+      procedure {public} Subtract (f : object{Field}) : object{Field}
+         implements Field.Subtract;
+      var
+         g : object{Field};
+         n : N.Number;
+         r, y : Scalar;
+      begin
+         y.Initialize;
+         if f is Scalar then
+            r := Scalar(f);
+            if u = r.u then
+               y.u := u;
+               y.x := x - r.x
+            else
+               L.WarningMessage(101,425, "Bel.PF.Scalars.Scalar.Subtract")
+            end
+         elsif f is N.Number then
+            n := N.Number(f);
+            if IsVoid() then
+               y.x := x - n
+            else
+               L.WarningMessage(101,425, "Bel.PF.Scalars.Scalar.Subtract")
+            end
+         else
+            L.WarningMessage(501,425, "Bel.PF.Scalars.Scalar.Subtract")
+         end;
+         g := Field(y);
+         return g
+      end Subtract;
+
+      procedure {public} Multiply (f : object{Field}) : object{Field}
+         implements Field.Multiply;
+      var
+         g : object{Field};
+         n : N.Number;
+         r, y : Scalar;
+      begin
+         y.Initialize;
+         if f is Scalar then
+            r := Scalar(f);
+            y.u := u + r.u;
+            y.x := x*r.x
+         elsif f is N.Number then
+            n := N.Number(f);
+            y.u := u;
+            y.x := x*n
+         else
+            L.WarningMessage(501,425, "Bel.PF.Scalars.Scalar.Multiply")
+         end;
+         g := Field(y);
+         return g
+      end Multiply;
+
+      procedure {public} Divide (f : object{Field}) : object{Field}
+         implements Field.Divide;
+      var
+         g : object{Field};
+         n : N.Number;
+         r, y : Scalar;
+      begin
+         y.Initialize;
+         if f is Scalar then
+            r := Scalar(f);
+            y.u := u - r.u;
+            y.x := x/r.x
+         elsif f is N.Number then
+            n := N.Number(f);
+            y.u := u;
+            y.x := x/n
+         else
+            L.WarningMessage(501,425, "Bel.PF.Scalars.Scalar.Divide")
+         end;
+         g := Field(y);
+         return g
+      end Divide;
+
+      (* 'NaN', 'Infinity' and '-Infinity' are allowed for the number part *)
+      procedure {public} Parse (s : string);
+      var
+         a : CharArray;
+         b, c : array 36 of char;
+         i, j, k : integer;
+         y, z : string;
+      begin
+         a := new CharArray(len(s)+1);
+         copy(s, a);
+         (* pass over any leading white space or tabs *)
+         k := 0;
+         while ((a[k] = " ") or (a[k] = 09X)) do
+            inc(k)
+         end;
+         (* read a contiguous string of characters - the number *)
+         i := 0;
+         repeat
+            b[i] := a[k];
+            inc(i);
+            inc(k);
+         until (a[k] = " ");
+         (* pass over any intermediate white space *)
+         while a[k] = " " do
+            inc(k)
+         end;
+         (* read another contiguous string of characters - the SI units *)
+         j := 0;
+         repeat
+            c[j] := a[k];
+            inc(j);
+            inc(k)
+         until (a[k] = " ") or (k = len(s));
+         (* add white space to be caught by their respective parsers *)
+         b[i] := " ";
+         c[j] := " ";
+         (* parse each component *)
+         copy(b, y);
+         x.Parse(y);
+         copy(c, z);
+         u.Parse(z)
+      end Parse;
+
+      procedure {public} Typeset () : string;
+      var
+         s : string;
+      begin
+         s := x.Typeset() + u.Typeset();
+         return s
+      end Typeset;
+
+      procedure {public} ToString (significantDigits : integer) : string;
+      var
+         s : string;
+      begin
+         s := x.ToString(significantDigits) + u.Typeset();
+         return s
+      end ToString;
+
+      procedure {public} Get () : N.Number;
+      var
+         y : N.Number;
+      begin
+         y := x;
+         return y
+      end Get;
+
+      procedure {public} GetUnits () : U.Si;
+      var
+         si : U.Si;
+      begin
+         si := u;
+         return si
+      end GetUnits;
+
+      procedure {public} Set (r : N.Number);
+      begin
+         x := r
+      end Set;
+
+      procedure {public} SetUnits (si : U.Si);
+      begin
+         u := si
+      end SetUnits;
+
+      procedure {public} IsFinite () : boolean;
+      begin
+         return x.IsFinite()
+      end IsFinite;
+
+      procedure {public} IsInfinite () : boolean;
+      begin
+         return x.IsInfinite()
+      end IsInfinite;
+
+      procedure {public} IsNegativeInfinity () : boolean;
+      begin
+         return x.IsNegativeInfinity()
+      end IsNegativeInfinity;
+
+      procedure {public} IsPositiveInfinity () : boolean;
+      begin
+         return x.IsPositiveInfinity()
+      end IsPositiveInfinity;
+
+      procedure {public} IsNaN () : boolean;
+      begin
+         return x.IsNaN()
+      end IsNaN;
+
+      procedure {public} IsVoid () : boolean;
+      begin
+         return u.IsVoid()
+      end IsVoid;
+
+      procedure {public} Equals (s : Scalar) : boolean;
+      begin
+         return ((u = s.u) & (x = s.x))
+      end Equals;
+
+      procedure {public} NotEqual (s : Scalar) : boolean;
+      begin
+         return ((u # s.u) or (x # s.x))
+      end NotEqual;
+
+      procedure {public} GreaterThan (s : Scalar) : boolean;
+      begin
+         if u = s.u then
+            return (x > s.x)
+         else
+            L.WarningMessage(101,424, "Bel.PF.Scalars.Scalar.GreaterThan");
+            return false
+         end
+      end GreaterThan;
+
+      procedure {public} GreaterThanOrEqual (s : Scalar) : boolean;
+      begin
+         if u = s.u then
+            return (x >= s.x)
+         else
+            L.WarningMessage(101,424,
+               "Bel.PF.Scalars.Scalar.GreaterThanOrEqual");
+            return false
+         end
+      end GreaterThanOrEqual;
+
+      procedure {public} LessThan (s : Scalar) : boolean;
+      begin
+         if u = s.u then
+            return (x < s.x)
+         else
+            L.WarningMessage(101,424, "Bel.PF.Scalars.Scalar.LessThan");
+            return false
+         end
+      end LessThan;
+
+      procedure {public} LessThanOrEqual (s : Scalar) : boolean;
+      begin
+         if u = s.u then
+            return (x <= s.x)
+         else
+            L.WarningMessage(101,424,
+               "Bel.PF.Scalars.Scalar.LessThanOrEqual");
+            return false
+         end
+      end LessThanOrEqual;
+
+      procedure {public} Reciprocal () : Scalar;
+      var
+         si : U.Si;
+         y : Scalar;
+      begin
+         si.Initialize;
+         y.u := si - u;
+         y.x := one/x;
+         return y
+      end Reciprocal;
+
+      procedure {public} Power (r : N.Number) : Scalar;
+      var
+         y : Scalar;
+      begin
+         y.Initialize;
+         if IsVoid() then
+            y.x := x**r
+         else
+            L.ErrorMessage(101,424, "Bel.PF.Scalars.Scalar.Power")
+         end;
+         return y
+      end Power;
+
+      procedure {public} Magnitude () : Scalar;
+      var
+         y : Scalar;
+      begin
+         y.u := u;
+         y.x := x.Magnitude();
+         return y
+      end Magnitude;
+
+   begin
+      Initialize
+   end Scalar;
+
+   (* OVERLOADED OPERATORS *)
+   (* places wrappers around the associated scalar methods *)
+
+   (* assignment - creates dimensionless scalars *)
+
+   operator {public} ':=' (var l : Scalar; r : Scalar);
+   begin
+      l.Set(r.Get());
+      l.SetUnits(r.GetUnits())
+   end ':=';
+
+   operator {public} ':=' (var l : Scalar; r : N.Number);
+   begin
+      l.Set(r);
+      l.SetUnits(U.Dimensionless)
+   end ':=';
+
+   operator {public} ':=' (var l : Scalar; r : Real64);
+   var
+      n : N.Number;
+   begin
+      n := r;
+      l.Set(n);
+      l.SetUnits(U.Dimensionless)
+   end ':=';
+
+   operator {public} ':=' (var l : Scalar; r : Real32);
+   var
+      n : N.Number;
+   begin
+      n := r;
+      l.Set(n);
+      l.SetUnits(U.Dimensionless)
+   end ':=';
+
+   operator {public} ':=' (var l : Scalar; r : Card64);
+   var
+      n : N.Number;
+   begin
+      n := r;
+      l.Set(n);
+      l.SetUnits(U.Dimensionless)
+   end ':=';
+
+   operator {public} ':=' (var l : Scalar; r : Card32);
+   var
+      n : N.Number;
+   begin
+      n := r;
+      l.Set(n);
+      l.SetUnits(U.Dimensionless)
+   end ':=';
+
+   operator {public} ':=' (var l : Scalar; r : Card16);
+   var
+      n : N.Number;
+   begin
+      n := r;
+      l.Set(n);
+      l.SetUnits(U.Dimensionless)
+   end ':=';
+
+   operator {public} ':=' (var l : Scalar; r : Card8);
+   var
+      n : N.Number;
+   begin
+      n := r;
+      l.Set(n);
+      l.SetUnits(U.Dimensionless)
+   end ':=';
+
+   operator {public} ':=' (var l : Scalar; r : Int64);
+   var
+      n : N.Number;
+   begin
+      n := r;
+      l.Set(n);
+      l.SetUnits(U.Dimensionless)
+   end ':=';
+
+   operator {public} ':=' (var l : Scalar; r : Int32);
+   var
+      n : N.Number;
+   begin
+      n := r;
+      l.Set(n);
+      l.SetUnits(U.Dimensionless)
+   end ':=';
+
+   operator {public} ':=' (var l : Scalar; r : Int16);
+   var
+      n : N.Number;
+   begin
+      n := r;
+      l.Set(n);
+      l.SetUnits(U.Dimensionless)
+   end ':=';
+
+   operator {public} ':=' (var l : Scalar; r : Int8);
+   var
+      n : N.Number;
+   begin
+      n := r;
+      l.Set(n);
+      l.SetUnits(U.Dimensionless)
+   end ':=';
+
+   operator {public} ':=' (var l : Scalar; r : string);
+   begin
+      l.Parse(r)
+   end ':=';
+
+   (* unary operator *)
+
+   operator {public} '-' (x : Scalar) : Scalar;
+   begin
+      return Scalar(x.Negative())
+   end '-';
+
+   (* logic operators *)
+
+   operator {public} '=' (l, r : Scalar) : boolean;
+   begin
+      return l.Equals(r)
+   end '=';
+
+   operator {public} '=' (l : N.Number; r : Scalar) : boolean;
+   var
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         y.Set(l);
+         return y.Equals(r)
+      else
+         return false
+      end
+   end '=';
+
+   operator {public} '=' (l : Card8; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.Equals(r)
+      else
+         return false
+      end
+   end '=';
+
+   operator {public} '=' (l : Card16; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.Equals(r)
+      else
+         return false
+      end
+   end '=';
+
+   operator {public} '=' (l : Card32; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.Equals(r)
+      else
+         return false
+      end
+   end '=';
+
+   operator {public} '=' (l : Card64; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.Equals(r)
+      else
+         return false
+      end
+   end '=';
+
+   operator {public} '=' (l : Int8; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.Equals(r)
+      else
+         return false
+      end
+   end '=';
+
+   operator {public} '=' (l : Int16; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.Equals(r)
+      else
+         return false
+      end
+   end '=';
+
+   operator {public} '=' (l : Int32; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.Equals(r)
+      else
+         return false
+      end
+   end '=';
+
+   operator {public} '=' (l : Int64; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.Equals(r)
+      else
+         return false
+      end
+   end '=';
+
+   operator {public} '=' (l : Real32; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.Equals(r)
+      else
+         return false
+      end
+   end '=';
+
+   operator {public} '=' (l : Real64; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.Equals(r)
+      else
+         return false
+      end
+   end '=';
+
+   operator {public} '=' (l : Scalar; r : N.Number) : boolean;
+   var
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         y.Set(r);
+         return l.Equals(y)
+      else
+         return false
+      end
+   end '=';
+
+   operator {public} '=' (l : Scalar; r : Card8) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.Equals(y)
+      else
+         return false
+      end
+   end '=';
+
+   operator {public} '=' (l : Scalar; r : Card16) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.Equals(y)
+      else
+         return false
+      end
+   end '=';
+
+   operator {public} '=' (l : Scalar; r : Card32) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.Equals(y)
+      else
+         return false
+      end
+   end '=';
+
+   operator {public} '=' (l : Scalar; r : Card64) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.Equals(y)
+      else
+         return false
+      end
+   end '=';
+
+   operator {public} '=' (l : Scalar; r : Int8) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.Equals(y)
+      else
+         return false
+      end
+   end '=';
+
+   operator {public} '=' (l : Scalar; r : Int16) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.Equals(y)
+      else
+         return false
+      end
+   end '=';
+
+   operator {public} '=' (l : Scalar; r : Int32) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.Equals(y)
+      else
+         return false
+      end
+   end '=';
+
+   operator {public} '=' (l : Scalar; r : Int64) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.Equals(y)
+      else
+         return false
+      end
+   end '=';
+
+   operator {public} '=' (l : Scalar; r : Real32) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.Equals(y)
+      else
+         return false
+      end
+   end '=';
+
+   operator {public} '=' (l : Scalar; r : Real64) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.Equals(y)
+      else
+         return false
+      end
+   end '=';
+
+   operator {public} '#' (l, r : Scalar) : boolean;
+   begin
+      return l.NotEqual(r)
+   end '#';
+
+   operator {public} '#' (l : N.Number; r : Scalar) : boolean;
+   var
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         y.Set(l);
+         return y.NotEqual(r)
+      else
+         return true
+      end
+   end '#';
+
+   operator {public} '#' (l : Card8; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.NotEqual(r)
+      else
+         return true
+      end
+   end '#';
+
+   operator {public} '#' (l : Card16; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.NotEqual(r)
+      else
+         return true
+      end
+   end '#';
+
+   operator {public} '#' (l : Card32; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.NotEqual(r)
+      else
+         return true
+      end
+   end '#';
+
+   operator {public} '#' (l : Card64; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.NotEqual(r)
+      else
+         return true
+      end
+   end '#';
+
+   operator {public} '#' (l : Int8; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.NotEqual(r)
+      else
+         return true
+      end
+   end '#';
+
+   operator {public} '#' (l : Int16; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.NotEqual(r)
+      else
+         return true
+      end
+   end '#';
+
+   operator {public} '#' (l : Int32; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.NotEqual(r)
+      else
+         return true
+      end
+   end '#';
+
+   operator {public} '#' (l : Int64; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.NotEqual(r)
+      else
+         return true
+      end
+   end '#';
+
+   operator {public} '#' (l : Real32; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.NotEqual(r)
+      else
+         return true
+      end
+   end '#';
+
+   operator {public} '#' (l : Real64; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.NotEqual(r)
+      else
+         return true
+      end
+   end '#';
+
+   operator {public} '#' (l : Scalar; r : N.Number) : boolean;
+   var
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         y.Set(r);
+         return l.NotEqual(y)
+      else
+         return true
+      end
+   end '#';
+
+   operator {public} '#' (l : Scalar; r : Card8) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.NotEqual(y)
+      else
+         return true
+      end
+   end '#';
+
+   operator {public} '#' (l : Scalar; r : Card16) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.NotEqual(y)
+      else
+         return true
+      end
+   end '#';
+
+   operator {public} '#' (l : Scalar; r : Card32) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.NotEqual(y)
+      else
+         return true
+      end
+   end '#';
+
+   operator {public} '#' (l : Scalar; r : Card64) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.NotEqual(y)
+      else
+         return true
+      end
+   end '#';
+
+   operator {public} '#' (l : Scalar; r : Int8) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.NotEqual(y)
+      else
+         return true
+      end
+   end '#';
+
+   operator {public} '#' (l : Scalar; r : Int16) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.NotEqual(y)
+      else
+         return true
+      end
+   end '#';
+
+   operator {public} '#' (l : Scalar; r : Int32) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.NotEqual(y)
+      else
+         return true
+      end
+   end '#';
+
+   operator {public} '#' (l : Scalar; r : Int64) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.NotEqual(y)
+      else
+         return true
+      end
+   end '#';
+
+   operator {public} '#' (l : Scalar; r : Real32) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.NotEqual(y)
+      else
+         return true
+      end
+   end '#';
+
+   operator {public} '#' (l : Scalar; r : Real64) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.NotEqual(y)
+      else
+         return true
+      end
+   end '#';
+
+   operator {public} '<' (l, r : Scalar) : boolean;
+   begin
+      return l.LessThan(r)
+   end '<';
+
+   operator {public} '<' (l : N.Number; r : Scalar) : boolean;
+   var
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         y.Set(l);
+         return y.LessThan(r)
+      else
+         return false
+      end
+   end '<';
+
+   operator {public} '<' (l : Card8; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.LessThan(r)
+      else
+         return false
+      end
+   end '<';
+
+   operator {public} '<' (l : Card16; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.LessThan(r)
+      else
+         return false
+      end
+   end '<';
+
+   operator {public} '<' (l : Card32; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.LessThan(r)
+      else
+         return false
+      end
+   end '<';
+
+   operator {public} '<' (l : Card64; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.LessThan(r)
+      else
+         return false
+      end
+   end '<';
+
+   operator {public} '<' (l : Int8; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.LessThan(r)
+      else
+         return false
+      end
+   end '<';
+
+   operator {public} '<' (l : Int16; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.LessThan(r)
+      else
+         return false
+      end
+   end '<';
+
+   operator {public} '<' (l : Int32; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.LessThan(r)
+      else
+         return false
+      end
+   end '<';
+
+   operator {public} '<' (l : Int64; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.LessThan(r)
+      else
+         return false
+      end
+   end '<';
+
+   operator {public} '<' (l : Real32; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.LessThan(r)
+      else
+         return false
+      end
+   end '<';
+
+   operator {public} '<' (l : Real64; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.LessThan(r)
+      else
+         return false
+      end
+   end '<';
+
+   operator {public} '<' (l : Scalar; r : N.Number) : boolean;
+   var
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         y.Set(r);
+         return l.LessThan(y)
+      else
+         return false
+      end
+   end '<';
+
+   operator {public} '<' (l : Scalar; r : Card8) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.LessThan(y)
+      else
+         return false
+      end
+   end '<';
+
+   operator {public} '<' (l : Scalar; r : Card16) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.LessThan(y)
+      else
+         return false
+      end
+   end '<';
+
+   operator {public} '<' (l : Scalar; r : Card32) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.LessThan(y)
+      else
+         return false
+      end
+   end '<';
+
+   operator {public} '<' (l : Scalar; r : Card64) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.LessThan(y)
+      else
+         return false
+      end
+   end '<';
+
+   operator {public} '<' (l : Scalar; r : Int8) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.LessThan(y)
+      else
+         return false
+      end
+   end '<';
+
+   operator {public} '<' (l : Scalar; r : Int16) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.LessThan(y)
+      else
+         return false
+      end
+   end '<';
+
+   operator {public} '<' (l : Scalar; r : Int32) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.LessThan(y)
+      else
+         return false
+      end
+   end '<';
+
+   operator {public} '<' (l : Scalar; r : Int64) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.LessThan(y)
+      else
+         return false
+      end
+   end '<';
+
+   operator {public} '<' (l : Scalar; r : Real32) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.LessThan(y)
+      else
+         return false
+      end
+   end '<';
+
+   operator {public} '<' (l : Scalar; r : Real64) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.LessThan(y)
+      else
+         return false
+      end
+   end '<';
+
+   operator {public} '<=' (l, r : Scalar) : boolean;
+   begin
+      return l.LessThanOrEqual(r)
+   end '<=';
+
+   operator {public} '<=' (l : N.Number; r : Scalar) : boolean;
+   var
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         y.Set(l);
+         return y.LessThanOrEqual(r)
+      else
+         return false
+      end
+   end '<=';
+
+   operator {public} '<=' (l : Card8; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.LessThanOrEqual(r)
+      else
+         return false
+      end
+   end '<=';
+
+   operator {public} '<=' (l : Card16; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.LessThanOrEqual(r)
+      else
+         return false
+      end
+   end '<=';
+
+   operator {public} '<=' (l : Card32; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.LessThanOrEqual(r)
+      else
+         return false
+      end
+   end '<=';
+
+   operator {public} '<=' (l : Card64; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.LessThanOrEqual(r)
+      else
+         return false
+      end
+   end '<=';
+
+   operator {public} '<=' (l : Int8; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.LessThanOrEqual(r)
+      else
+         return false
+      end
+   end '<=';
+
+   operator {public} '<=' (l : Int16; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.LessThanOrEqual(r)
+      else
+         return false
+      end
+   end '<=';
+
+   operator {public} '<=' (l : Int32; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.LessThanOrEqual(r)
+      else
+         return false
+      end
+   end '<=';
+
+   operator {public} '<=' (l : Int64; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.LessThanOrEqual(r)
+      else
+         return false
+      end
+   end '<=';
+
+   operator {public} '<=' (l : Real32; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.LessThanOrEqual(r)
+      else
+         return false
+      end
+   end '<=';
+
+   operator {public} '<=' (l : Real64; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.LessThanOrEqual(r)
+      else
+         return false
+      end
+   end '<=';
+
+   operator {public} '<=' (l : Scalar; r : N.Number) : boolean;
+   var
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         y.Set(r);
+         return l.LessThanOrEqual(y)
+      else
+         return false
+      end
+   end '<=';
+
+   operator {public} '<=' (l : Scalar; r : Card8) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.LessThanOrEqual(y)
+      else
+         return false
+      end
+   end '<=';
+
+   operator {public} '<=' (l : Scalar; r : Card16) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.LessThanOrEqual(y)
+      else
+         return false
+      end
+   end '<=';
+
+   operator {public} '<=' (l : Scalar; r : Card32) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.LessThanOrEqual(y)
+      else
+         return false
+      end
+   end '<=';
+
+   operator {public} '<=' (l : Scalar; r : Card64) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.LessThanOrEqual(y)
+      else
+         return false
+      end
+   end '<=';
+
+   operator {public} '<=' (l : Scalar; r : Int8) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.LessThanOrEqual(y)
+      else
+         return false
+      end
+   end '<=';
+
+   operator {public} '<=' (l : Scalar; r : Int16) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.LessThanOrEqual(y)
+      else
+         return false
+      end
+   end '<=';
+
+   operator {public} '<=' (l : Scalar; r : Int32) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.LessThanOrEqual(y)
+      else
+         return false
+      end
+   end '<=';
+
+   operator {public} '<=' (l : Scalar; r : Int64) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.LessThanOrEqual(y)
+      else
+         return false
+      end
+   end '<=';
+
+   operator {public} '<=' (l : Scalar; r : Real32) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.LessThanOrEqual(y)
+      else
+         return false
+      end
+   end '<=';
+
+   operator {public} '<=' (l : Scalar; r : Real64) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.LessThanOrEqual(y)
+      else
+         return false
+      end
+   end '<=';
+
+   operator {public} '>' (l, r : Scalar) : boolean;
+   begin
+      return l.GreaterThan(r)
+   end '>';
+
+   operator {public} '>' (l : N.Number; r : Scalar) : boolean;
+   var
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         y.Set(l);
+         return y.GreaterThan(r)
+      else
+         return false
+      end
+   end '>';
+
+   operator {public} '>' (l : Card8; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.GreaterThan(r)
+      else
+         return false
+      end
+   end '>';
+
+   operator {public} '>' (l : Card16; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.GreaterThan(r)
+      else
+         return false
+      end
+   end '>';
+
+   operator {public} '>' (l : Card32; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.GreaterThan(r)
+      else
+         return false
+      end
+   end '>';
+
+   operator {public} '>' (l : Card64; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.GreaterThan(r)
+      else
+         return false
+      end
+   end '>';
+
+   operator {public} '>' (l : Int8; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.GreaterThan(r)
+      else
+         return false
+      end
+   end '>';
+
+   operator {public} '>' (l : Int16; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.GreaterThan(r)
+      else
+         return false
+      end
+   end '>';
+
+   operator {public} '>' (l : Int32; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.GreaterThan(r)
+      else
+         return false
+      end
+   end '>';
+
+   operator {public} '>' (l : Int64; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.GreaterThan(r)
+      else
+         return false
+      end
+   end '>';
+
+   operator {public} '>' (l : Real32; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.GreaterThan(r)
+      else
+         return false
+      end
+   end '>';
+
+   operator {public} '>' (l : Real64; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.GreaterThan(r)
+      else
+         return false
+      end
+   end '>';
+
+   operator {public} '>' (l : Scalar; r : N.Number) : boolean;
+   var
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         y.Set(r);
+         return l.GreaterThan(y)
+      else
+         return false
+      end
+   end '>';
+
+   operator {public} '>' (l : Scalar; r : Card8) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.GreaterThan(y)
+      else
+         return false
+      end
+   end '>';
+
+   operator {public} '>' (l : Scalar; r : Card16) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.GreaterThan(y)
+      else
+         return false
+      end
+   end '>';
+
+   operator {public} '>' (l : Scalar; r : Card32) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.GreaterThan(y)
+      else
+         return false
+      end
+   end '>';
+
+   operator {public} '>' (l : Scalar; r : Card64) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.GreaterThan(y)
+      else
+         return false
+      end
+   end '>';
+
+   operator {public} '>' (l : Scalar; r : Int8) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.GreaterThan(y)
+      else
+         return false
+      end
+   end '>';
+
+   operator {public} '>' (l : Scalar; r : Int16) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.GreaterThan(y)
+      else
+         return false
+      end
+   end '>';
+
+   operator {public} '>' (l : Scalar; r : Int32) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.GreaterThan(y)
+      else
+         return false
+      end
+   end '>';
+
+   operator {public} '>' (l : Scalar; r : Int64) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.GreaterThan(y)
+      else
+         return false
+      end
+   end '>';
+
+   operator {public} '>' (l : Scalar; r : Real32) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.GreaterThan(y)
+      else
+         return false
+      end
+   end '>';
+
+   operator {public} '>' (l : Scalar; r : Real64) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.GreaterThan(y)
+      else
+         return false
+      end
+   end '>';
+
+   operator {public} '>=' (l, r : Scalar) : boolean;
+   begin
+      return l.GreaterThanOrEqual(r)
+   end '>=';
+
+   operator {public} '>=' (l : N.Number; r : Scalar) : boolean;
+   var
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         y.Set(l);
+         return y.GreaterThanOrEqual(r)
+      else
+         return false
+      end
+   end '>=';
+
+   operator {public} '>=' (l : Card8; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.GreaterThanOrEqual(r)
+      else
+         return false
+      end
+   end '>=';
+
+   operator {public} '>=' (l : Card16; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.GreaterThanOrEqual(r)
+      else
+         return false
+      end
+   end '>=';
+
+   operator {public} '>=' (l : Card32; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.GreaterThanOrEqual(r)
+      else
+         return false
+      end
+   end '>=';
+
+   operator {public} '>=' (l : Card64; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.GreaterThanOrEqual(r)
+      else
+         return false
+      end
+   end '>=';
+
+   operator {public} '>=' (l : Int8; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.GreaterThanOrEqual(r)
+      else
+         return false
+      end
+   end '>=';
+
+   operator {public} '>=' (l : Int16; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.GreaterThanOrEqual(r)
+      else
+         return false
+      end
+   end '>=';
+
+   operator {public} '>=' (l : Int32; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.GreaterThanOrEqual(r)
+      else
+         return false
+      end
+   end '>=';
+
+   operator {public} '>=' (l : Int64; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.GreaterThanOrEqual(r)
+      else
+         return false
+      end
+   end '>=';
+
+   operator {public} '>=' (l : Real32; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.GreaterThanOrEqual(r)
+      else
+         return false
+      end
+   end '>=';
+
+   operator {public} '>=' (l : Real64; r : Scalar) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if r.IsVoid() then
+         n := l;
+         y.Set(n);
+         return y.GreaterThanOrEqual(r)
+      else
+         return false
+      end
+   end '>=';
+
+   operator {public} '>=' (l : Scalar; r : N.Number) : boolean;
+   var
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         y.Set(r);
+         return l.GreaterThanOrEqual(y)
+      else
+         return false
+      end
+   end '>=';
+
+   operator {public} '>=' (l : Scalar; r : Card8) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.GreaterThanOrEqual(y)
+      else
+         return false
+      end
+   end '>=';
+
+   operator {public} '>=' (l : Scalar; r : Card16) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.GreaterThanOrEqual(y)
+      else
+         return false
+      end
+   end '>=';
+
+   operator {public} '>=' (l : Scalar; r : Card32) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.GreaterThanOrEqual(y)
+      else
+         return false
+      end
+   end '>=';
+
+   operator {public} '>=' (l : Scalar; r : Card64) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.GreaterThanOrEqual(y)
+      else
+         return false
+      end
+   end '>=';
+
+   operator {public} '>=' (l : Scalar; r : Int8) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.GreaterThanOrEqual(y)
+      else
+         return false
+      end
+   end '>=';
+
+   operator {public} '>=' (l : Scalar; r : Int16) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.GreaterThanOrEqual(y)
+      else
+         return false
+      end
+   end '>=';
+
+   operator {public} '>=' (l : Scalar; r : Int32) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.GreaterThanOrEqual(y)
+      else
+         return false
+      end
+   end '>=';
+
+   operator {public} '>=' (l : Scalar; r : Int64) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.GreaterThanOrEqual(y)
+      else
+         return false
+      end
+   end '>=';
+
+   operator {public} '>=' (l : Scalar; r : Real32) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.GreaterThanOrEqual(y)
+      else
+         return false
+      end
+   end '>=';
+
+   operator {public} '>=' (l : Scalar; r : Real64) : boolean;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      if l.IsVoid() then
+         n := r;
+         y.Set(n);
+         return l.GreaterThanOrEqual(y)
+      else
+         return false
+      end
+   end '>=';
+
+   (* arithemtic operators *)
+
+   operator {public} '+' (l, r : Scalar) : Scalar;
+   begin
+      return Scalar(l.Add(r))
+   end '+';
+
+   operator {public} '+' (l : N.Number; r : Scalar) : Scalar;
+   begin
+      return Scalar(r.Add(l))
+   end '+';
+
+   operator {public} '+' (l : Card8; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Scalar(r.Add(n))
+   end '+';
+
+   operator {public} '+' (l : Card16; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Scalar(r.Add(n))
+   end '+';
+
+   operator {public} '+' (l : Card32; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Scalar(r.Add(n))
+   end '+';
+
+   operator {public} '+' (l : Card64; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Scalar(r.Add(n))
+   end '+';
+
+   operator {public} '+' (l : Int8; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Scalar(r.Add(n))
+   end '+';
+
+   operator {public} '+' (l : Int16; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Scalar(r.Add(n))
+   end '+';
+
+   operator {public} '+' (l : Int32; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Scalar(r.Add(n))
+   end '+';
+
+   operator {public} '+' (l : Int64; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Scalar(r.Add(n))
+   end '+';
+
+   operator {public} '+' (l : Real32; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Scalar(r.Add(n))
+   end '+';
+
+   operator {public} '+' (l : Real64; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Scalar(r.Add(n))
+   end '+';
+
+   operator {public} '+' (l : Scalar; r : N.Number) : Scalar;
+   begin
+      return Scalar(l.Add(r))
+   end '+';
+
+   operator {public} '+' (l : Scalar; r : Card8) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Add(n))
+   end '+';
+
+   operator {public} '+' (l : Scalar; r : Card16) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Add(n))
+   end '+';
+
+   operator {public} '+' (l : Scalar; r : Card32) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Add(n))
+   end '+';
+
+   operator {public} '+' (l : Scalar; r : Card64) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Add(n))
+   end '+';
+
+   operator {public} '+' (l : Scalar; r : Int8) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Add(n))
+   end '+';
+
+   operator {public} '+' (l : Scalar; r : Int16) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Add(n))
+   end '+';
+
+   operator {public} '+' (l : Scalar; r : Int32) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Add(n))
+   end '+';
+
+   operator {public} '+' (l : Scalar; r : Int64) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Add(n))
+   end '+';
+
+   operator {public} '+' (l : Scalar; r : Real32) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Add(n))
+   end '+';
+
+   operator {public} '+' (l : Scalar; r : Real64) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Add(n))
+   end '+';
+
+   operator {public} '-' (l, r : Scalar) : Scalar;
+   begin
+      return Scalar(l.Subtract(r))
+   end '-';
+
+   operator {public} '-' (l : N.Number; r : Scalar) : Scalar;
+   var
+      y : Scalar;
+   begin
+      y := Scalar(r.Subtract(l));
+      return Scalar(y.Negative())
+   end '-';
+
+   operator {public} '-' (l : Card8; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      n := l;
+      y := Scalar(r.Subtract(n));
+      return Scalar(y.Negative())
+   end '-';
+
+   operator {public} '-' (l : Card16; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      n := l;
+      y := Scalar(r.Subtract(n));
+      return Scalar(y.Negative())
+   end '-';
+
+   operator {public} '-' (l : Card32; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      n := l;
+      y := Scalar(r.Subtract(n));
+      return Scalar(y.Negative())
+   end '-';
+
+   operator {public} '-' (l : Card64; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      n := l;
+      y := Scalar(r.Subtract(n));
+      return Scalar(y.Negative())
+   end '-';
+
+   operator {public} '-' (l : Int8; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      n := l;
+      y := Scalar(r.Subtract(n));
+      return Scalar(y.Negative())
+   end '-';
+
+   operator {public} '-' (l : Int16; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      n := l;
+      y := Scalar(r.Subtract(n));
+      return Scalar(y.Negative())
+   end '-';
+
+   operator {public} '-' (l : Int32; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      n := l;
+      y := Scalar(r.Subtract(n));
+      return Scalar(y.Negative())
+   end '-';
+
+   operator {public} '-' (l : Int64; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      n := l;
+      y := Scalar(r.Subtract(n));
+      return Scalar(y.Negative())
+   end '-';
+
+   operator {public} '-' (l : Real32; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      n := l;
+      y := Scalar(r.Subtract(n));
+      return Scalar(y.Negative())
+   end '-';
+
+   operator {public} '-' (l : Real64; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      n := l;
+      y := Scalar(r.Subtract(n));
+      return Scalar(y.Negative())
+   end '-';
+
+   operator {public} '-' (l : Scalar; r : N.Number) : Scalar;
+   begin
+      return Scalar(l.Subtract(r))
+   end '-';
+
+   operator {public} '-' (l : Scalar; r : Card8) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Subtract(n))
+   end '-';
+
+   operator {public} '-' (l : Scalar; r : Card16) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Subtract(n))
+   end '-';
+
+   operator {public} '-' (l : Scalar; r : Card32) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Subtract(n))
+   end '-';
+
+   operator {public} '-' (l : Scalar; r : Card64) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Subtract(n))
+   end '-';
+
+   operator {public} '-' (l : Scalar; r : Int8) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Subtract(n))
+   end '-';
+
+   operator {public} '-' (l : Scalar; r : Int16) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Subtract(n))
+   end '-';
+
+   operator {public} '-' (l : Scalar; r : Int32) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Subtract(n))
+   end '-';
+
+   operator {public} '-' (l : Scalar; r : Int64) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Subtract(n))
+   end '-';
+
+   operator {public} '-' (l : Scalar; r : Real32) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Subtract(n))
+   end '-';
+
+   operator {public} '-' (l : Scalar; r : Real64) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Subtract(n))
+   end '-';
+
+   operator {public} '*' (l, r : Scalar) : Scalar;
+   begin
+      return Scalar(l.Multiply(r))
+   end '*';
+
+   operator {public} '*' (l : N.Number; r : Scalar) : Scalar;
+   begin
+      return Scalar(r.Multiply(l))
+   end '*';
+
+   operator {public} '*' (l : Card8; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Scalar(r.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Card16; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Scalar(r.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Card32; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Scalar(r.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Card64; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Scalar(r.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Int8; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Scalar(r.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Int16; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Scalar(r.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Int32; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Scalar(r.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Int64; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Scalar(r.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Real32; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Scalar(r.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Real64; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := l;
+      return Scalar(r.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Scalar; r : N.Number) : Scalar;
+   begin
+      return Scalar(l.Multiply(r))
+   end '*';
+
+   operator {public} '*' (l : Scalar; r : Card8) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Scalar; r : Card16) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Scalar; r : Card32) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Scalar; r : Card64) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Scalar; r : Int8) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Scalar; r : Int16) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Scalar; r : Int32) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Scalar; r : Int64) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Scalar; r : Real32) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Multiply(n))
+   end '*';
+
+   operator {public} '*' (l : Scalar; r : Real64) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Multiply(n))
+   end '*';
+
+   operator {public} '/' (l, r : Scalar) : Scalar;
+   begin
+      return Scalar(l.Divide(r))
+   end '/';
+
+   operator {public} '/' (l : Scalar; r : N.Number) : Scalar;
+   begin
+      return Scalar(l.Divide(r))
+   end '/';
+
+   operator {public} '/' (l : Scalar; r : Card8) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Divide(n))
+   end '/';
+
+   operator {public} '/' (l : Scalar; r : Card16) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Divide(n))
+   end '/';
+
+   operator {public} '/' (l : Scalar; r : Card32) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Divide(n))
+   end '/';
+
+   operator {public} '/' (l : Scalar; r : Card64) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Divide(n))
+   end '/';
+
+   operator {public} '/' (l : Scalar; r : Int8) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Divide(n))
+   end '/';
+
+   operator {public} '/' (l : Scalar; r : Int16) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Divide(n))
+   end '/';
+
+   operator {public} '/' (l : Scalar; r : Int32) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Divide(n))
+   end '/';
+
+   operator {public} '/' (l : Scalar; r : Int64) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Divide(n))
+   end '/';
+
+   operator {public} '/' (l : Scalar; r : Real32) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Divide(n))
+   end '/';
+
+   operator {public} '/' (l : Scalar; r : Real64) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return Scalar(l.Divide(n))
+   end '/';
+
+   operator {public} '/' (l : N.Number; r : Scalar) : Scalar;
+   var
+      y : Scalar;
+   begin
+      y := r.Reciprocal();
+      return Scalar(y.Multiply(l))
+   end '/';
+
+   operator {public} '/' (l : Card8; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      n := l;
+      y := r.Reciprocal();
+      return Scalar(y.Multiply(n))
+   end '/';
+
+   operator {public} '/' (l : Card16; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      n := l;
+      y := r.Reciprocal();
+      return Scalar(y.Multiply(n))
+   end '/';
+
+   operator {public} '/' (l : Card32; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      n := l;
+      y := r.Reciprocal();
+      return Scalar(y.Multiply(n))
+   end '/';
+
+   operator {public} '/' (l : Card64; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      n := l;
+      y := r.Reciprocal();
+      return Scalar(y.Multiply(n))
+   end '/';
+
+   operator {public} '/' (l : Int8; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      n := l;
+      y := r.Reciprocal();
+      return Scalar(y.Multiply(n))
+   end '/';
+
+   operator {public} '/' (l : Int16; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      n := l;
+      y := r.Reciprocal();
+      return Scalar(y.Multiply(n))
+   end '/';
+
+   operator {public} '/' (l : Int32; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      n := l;
+      y := r.Reciprocal();
+      return Scalar(y.Multiply(n))
+   end '/';
+
+   operator {public} '/' (l : Int64; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      n := l;
+      y := r.Reciprocal();
+      return Scalar(y.Multiply(n))
+   end '/';
+
+   operator {public} '/' (l : Real32; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      n := l;
+      y := r.Reciprocal();
+      return Scalar(y.Multiply(n))
+   end '/';
+
+   operator {public} '/' (l : Real64; r : Scalar) : Scalar;
+   var
+      n : N.Number;
+      y : Scalar;
+   begin
+      n := l;
+      y := r.Reciprocal();
+      return Scalar(y.Multiply(n))
+   end '/';
+
+   operator {public} '**' (l : Scalar; r : Scalar) : Scalar;
+   var
+      y : Scalar;
+   begin
+      y.Initialize;
+      if r.IsVoid() then
+         y := l.Power(r.Get())
+      else
+         L.ErrorMessage(101,425, "Bel.PF.Scalars.Scalar.**")
+      end;
+      return y
+   end '**';
+
+   operator {public} '**' (l : Scalar; r : N.Number) : Scalar;
+   begin
+      return l.Power(r)
+   end '**';
+
+   operator {public} '**' (l : Scalar; r : Card8) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return l.Power(n)
+   end '**';
+
+   operator {public} '**' (l : Scalar; r : Card16) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return l.Power(n)
+   end '**';
+
+   operator {public} '**' (l : Scalar; r : Card32) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return l.Power(n)
+   end '**';
+
+   operator {public} '**' (l : Scalar; r : Card64) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return l.Power(n)
+   end '**';
+
+   operator {public} '**' (l : Scalar; r : Int8) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return l.Power(n)
+   end '**';
+
+   operator {public} '**' (l : Scalar; r : Int16) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return l.Power(n)
+   end '**';
+
+   operator {public} '**' (l : Scalar; r : Int32) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return l.Power(n)
+   end '**';
+
+   operator {public} '**' (l : Scalar; r : Int64) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return l.Power(n)
+   end '**';
+
+   operator {public} '**' (l : Scalar; r : Real32) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return l.Power(n)
+   end '**';
+
+   operator {public} '**' (l : Scalar; r : Real64) : Scalar;
+   var
+      n : N.Number;
+   begin
+      n := r;
+      return l.Power(n)
+   end '**';
+
+   operator {public} '**' (l : Card8; r : Scalar) : Scalar;
+   var
+      n, x : N.Number;
+      y : Scalar;
+   begin
+      y.Initialize;
+      x := l;
+      if r.IsVoid() then
+         n := r.Get();
+         y.Set(x**n);
+      else
+         L.WarningMessage(101,425, "Bel.PF.Scalars.'**'")
+      end;
+      return y
+   end '**';
+
+   operator {public} '**' (l : Card16; r : Scalar) : Scalar;
+   var
+      n, x : N.Number;
+      y : Scalar;
+   begin
+      y.Initialize;
+      x := l;
+      if r.IsVoid() then
+         n := r.Get();
+         y.Set(x**n);
+      else
+         L.WarningMessage(101,425, "Bel.PF.Scalars.'**'")
+      end;
+      return y
+   end '**';
+
+   operator {public} '**' (l : Card32; r : Scalar) : Scalar;
+   var
+      n, x : N.Number;
+      y : Scalar;
+   begin
+      y.Initialize;
+      x := l;
+      if r.IsVoid() then
+         n := r.Get();
+         y.Set(x**n);
+      else
+         L.WarningMessage(101,425, "Bel.PF.Scalars.'**'")
+      end;
+      return y
+   end '**';
+
+   operator {public} '**' (l : Card64; r : Scalar) : Scalar;
+   var
+      n, x : N.Number;
+      y : Scalar;
+   begin
+      y.Initialize;
+      x := l;
+      if r.IsVoid() then
+         n := r.Get();
+         y.Set(x**n);
+      else
+         L.WarningMessage(101,425, "Bel.PF.Scalars.'**'")
+      end;
+      return y
+   end '**';
+
+   operator {public} '**' (l : Int8; r : Scalar) : Scalar;
+   var
+      n, x : N.Number;
+      y : Scalar;
+   begin
+      y.Initialize;
+      x := l;
+      if r.IsVoid() then
+         n := r.Get();
+         y.Set(x**n);
+      else
+         L.WarningMessage(101,425, "Bel.PF.Scalars.'**'")
+      end;
+      return y
+   end '**';
+
+   operator {public} '**' (l : Int16; r : Scalar) : Scalar;
+   var
+      n, x : N.Number;
+      y : Scalar;
+   begin
+      y.Initialize;
+      x := l;
+      if r.IsVoid() then
+         n := r.Get();
+         y.Set(x**n);
+      else
+         L.WarningMessage(101,425, "Bel.PF.Scalars.'**'")
+      end;
+      return y
+   end '**';
+
+   operator {public} '**' (l : Int32; r : Scalar) : Scalar;
+   var
+      n, x : N.Number;
+      y : Scalar;
+   begin
+      y.Initialize;
+      x := l;
+      if r.IsVoid() then
+         n := r.Get();
+         y.Set(x**n);
+      else
+         L.WarningMessage(101,425, "Bel.PF.Scalars.'**'")
+      end;
+      return y
+   end '**';
+
+   operator {public} '**' (l : Int64; r : Scalar) : Scalar;
+   var
+      n, x : N.Number;
+      y : Scalar;
+   begin
+      y.Initialize;
+      x := l;
+      if r.IsVoid() then
+         n := r.Get();
+         y.Set(x**n);
+      else
+         L.WarningMessage(101,425, "Bel.PF.Scalars.'**'")
+      end;
+      return y
+   end '**';
+
+   operator {public} '**' (l : Real32; r : Scalar) : Scalar;
+   var
+      n, x : N.Number;
+      y : Scalar;
+   begin
+      y.Initialize;
+      x := l;
+      if r.IsVoid() then
+         n := r.Get();
+         y.Set(x**n);
+      else
+         L.WarningMessage(101,425, "Bel.PF.Scalars.'**'")
+      end;
+      return y
+   end '**';
+
+   operator {public} '**' (l : Real64; r : Scalar) : Scalar;
+   var
+      n, x : N.Number;
+      y : Scalar;
+   begin
+      y.Initialize;
+      x := l;
+      if r.IsVoid() then
+         n := r.Get();
+         y.Set(x**n);
+      else
+         L.WarningMessage(101,425, "Bel.PF.Scalars.'**'")
+      end;
+      return y
+   end '**';
+
+begin
+   one := 1.0E0
+end Scalars.

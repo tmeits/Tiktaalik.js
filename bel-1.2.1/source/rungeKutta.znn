@@ -1,0 +1,249 @@
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(*       BBBB      EEEEE     L         The                                    *)
+(*       B   B     E         L           BIOLOGICAL                           *)
+(*       BBBB      EEE       L           ENGINEERING                          *)
+(*       B    B    E         L           LABORATORY                           *)
+(*       BBBBB     EEEEEE    LLLLLL        @ Saginaw Valley State University  *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Copyright 2008-2010, Alan D. Freed                                         *)
+(*                                                                            *)
+(* This file is part of the BEL suite of .NET/mono libraries.                 *)
+(*                                                                            *)
+(* BEL is a free software: you can redistribute it and/or modify it under the *)
+(* terms of the GNU Lesser General Public License as published by the Free    *)
+(* Software Foundation, either version 3 of the License, or (at your option)  *)
+(* any later version.                                                         *)
+(*                                                                            *)
+(* BEL is distributed in the hope that it will be useful, but WITHOUT ANY     *)
+(* WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS  *)
+(* FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License for   *)
+(* more details.                                                              *)
+(*                                                                            *)
+(* You should have received a copy of the GNU Lesser General Public License   *)
+(* along with BEL.  If not, see <http://www.gnu.org/licenses/>.               *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* This module exports Runge-Kutta integrators that advance the solution to a *)
+(* system of first-order ODEs over a single integration step h such that      *)
+(*    dy[n]/dx = f[n](x, y[k])   with   y[n](x0) = y0[n]   where   n = 1..N   *)
+(* wherein                                                                    *)
+(*       x  is the independent variable                                       *)
+(*       y  is the vector of dependent variables                              *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Richardson extrapolation is used to ascertain an asymptotically correct    *)
+(* error approximation used to maintain accuracy during integration.  If an   *)
+(* interval of integration does no meet the tolerance specified, then it is   *)
+(* split into two sub-intervals, with recurrsion occuring until the tolerance *)
+(* is met over the interval requested, at which time the integrator returns   *)
+(* its solution.  This sub-intervalling is done internally and automatically. *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* A second-order Runge-Kutta integrator that utilizes the weights and        *)
+(* quadrature points of the trapezoidal rule has a Butcher tableau of         *)
+(*           [  0      ]                                                      *)
+(*       A = [  1   0  ]                                                      *)
+(*       b = { 1/2 1/2 }^T                                                    *)
+(*       c = {  0   1  }^T                                                    *)
+(* A third-order Runge-Kutta integrator that utilizes the weights and         *)
+(* quadrature points of Simpson's rule (a.k.a. Kepler's cask rule) has a      *)
+(* Butcher tableau of                                                         *)
+(*           [  0          ]                                                  *)
+(*       A = [ 1/2  0      ]                                                  *)
+(*           [ -1   2   0  ]                                                  *)
+(*       b = { 1/6 2/3 1/6 }^T                                                *)
+(*       c = {  0  1/2  1  }^T                                                *)
+(* Kutta's 3/8 rule is a fourth-order integrator with a Butcher tableau of    *)
+(*           [  0              ]                                              *)
+(*           [ 1/3  0          ]                                              *)
+(*       A = [-1/3  1   0      ]                                              *)
+(*           [  1  -1   1   0  ]                                              *)
+(*       b = { 1/8 3/8 3/8 1/8 }^T                                            *)
+(*       c = {  0  1/3 2/3  1  }^T                                            *)
+(* Here                                                                       *)
+(*   matrix  A  are the coupling coefficients of the Runge-Kutta integrator   *)
+(*   vector  b  are the weights of integration                                *)
+(*   vector  c  are the quadrature points of integration                      *)
+(* with      p  being the order of the method.                                *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Consider a step size of  h.  Construct two solutions over this step        *)
+(*   y1  is the solution got by calling an RK integrator once over  h         *)
+(*   y2  is the solution got by calling RK twice over two intervals of  h/2   *)
+(* The solutions have an asymptotically correct estimate of the local         *)
+(* truncation error given by                                                  *)
+(*   error = (1 - 2^{-p})^{-1}*(y1 - y0) + O(h^{p+2})                         *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Exported types                                                             *)
+(*       Order = (second, third, fourth) is the accuracy of the integrator    *)
+(*       F(x : N.Number; y : A.Array)    is an ODE in non-autonomous form     *)
+(* Exported variable                                                          *)
+(*       count      an accounting of the number of function calls made        *)
+(*                  number of integration steps equals 'count'/(3'Order')     *)
+(* Exported procedure                                                         *)
+(*       Solve                                                                *)
+(*             f    is an instance of  F, viz., the ODE to be integrated      *)
+(*             tol  is the error tolerance,  err <= tol                       *)
+(*             ord  is the order of the integrator to be used                 *)
+(*          var                                                               *)
+(*             x    independent variable:  send  x_{n-1}    returns  x_n      *)
+(*             y    dependent variable:    send  y_{n-1}    returns  y_n      *)
+(*             h    is the step size:      send  h_{n-1}    returns  h_n      *)
+(*             err  is the relative error: send  err_{n-1}  returns  err_n    *)
+(* This solver returns  x_n = x_{n-1} + h_{n-1}  without fail.  The returned  *)
+(* value for the next step  h_n  is what the integrator determines to be an   *)
+(* optimal choice, as determined by the PI time-step control algorithm.  The  *)
+(* error that is returned is asymptotically correct, and has been normalized  *)
+(* against the tolerance, which should be set to, e.g., 0.01 if the user      *)
+(* wants two significant figures in accuracy, or to 0.0001 if they want four. *)
+(* To start the integrator, set err = 0.  When advancing the integrator to    *)
+(* then next step, supply the error err that came from the previous step.     *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Reference : J.C. Butcher, "Numerical Methods for Ordinary Differential     *)
+(*             Equations", second edition, Wiley, Chirchester, 2008.          *)
+(* It was John Butcher's suggestion to select Richardson extrapolation over   *)
+(* an embedded Runge-Kutta approach; specifically, because this code is to    *)
+(* be used for both teaching as-well-as production.                           *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+
+module {public} Bel.MATH.RungeKutta;
+
+import
+   Bel.IO.Log as L,
+   Bel.MF.Numbers  as N,
+   Bel.MF.Arrays   as A,
+   Bel.MATH.Functions as Fn;
+
+   type {public}
+      Order = (second, third, fourth);
+      F = procedure (N.Number; A.Array) : A.Array;
+
+   var {public}
+      count : integer;
+
+   procedure {private} RK2 (f : F; h, x0 : N.Number; y0 : A.Array) : A.Array;
+   var
+      x1 : N.Number;
+      f0, f1, y1, ys : A.Array;
+   begin
+      inc(count, 2);
+      f0 := f(x0, y0);
+      x1 := x0 + h;
+      y1 := y0 + h*f0;
+      f1 := f(x1, y1);
+      ys := y0 + (h/2)*(f0 + f1);
+      return ys
+   end RK2;
+
+   procedure {private} RK3 (f : F; h, x0 : N.Number; y0 : A.Array) : A.Array;
+   var
+      x1, x2 : N.Number;
+      f0, f1, f2, y1, y2, ys : A.Array;
+   begin
+      inc(count, 3);
+      f0 := f(x0, y0);
+      x1 := x0 + h/2;
+      y1 := y0 + (h/2)*f0;
+      f1 := f(x1, y1);
+      x2 := x0 + h;
+      y2 := y0 + h*(2*f1 - f0);
+      f2 := f(x2, y2);
+      ys := y0 + (h/6)*(f0 + 4*f1 + f2);
+      return ys
+   end RK3;
+
+   procedure {private} RK4 (f : F; h, x0 : N.Number; y0 : A.Array) : A.Array;
+   var
+      x1, x2, x3 : N.Number;
+      f0, f1, f2, f3, y1, y2, y3, ys : A.Array;
+   begin
+      inc(count, 4);
+      f0 := f(x0, y0);
+      x1 := x0 + h/3;
+      y1 := y0 + (h/3)*f0;
+      f1 := f(x1, y1);
+      x2 := x0 + (2*h)/3;
+      y2 := y0 + h*(f1 - f0/3);
+      f2 := f(x2, y2);
+      x3 := x0 + h;
+      y3 := y0 + h*(f0 - f1 + f2);
+      f3 := f(x3, y3);
+      ys := y0 + (h/8)*(f0 + 3*(f1 + f2) + f3);
+      return ys
+   end RK4;
+
+   procedure {public} Solve
+      (f : F;               (* the right-hand side function, dy/dx = f(x, y)  *)
+       tol : N.Number;      (* the error tolerance of integration             *)
+       ord : Order;         (* the order of the RK integrator to be used      *)
+       var x : N.Number;    (* the controlled or independent variable         *)
+       var y : A.Array;     (* the response or dependent variables            *)
+       var h : N.Number;    (* the dynamic step-size for integration          *)
+       var err : N.Number); (* an asymptotically correct estimate of error    *)
+   var
+      alpha, beta, ec, en, e0, e1, hh, h0, h1,
+         one, p, r, sf, xh, x0, x1, yn : N.Number;
+      yh, y0, y1 : A.Array;
+   begin
+      if f = nil then
+         L.ErrorMessage(410,-1, "Bel.MATH.RungeKutta.Solve")
+      end;
+      alpha := 0.7;  (* coefficient governing the I part of the controller *)
+      beta := -0.4;  (* coefficient governing the P part of the controller *)
+      sf  := 0.9;    (* the safety factor for the step-size controller     *)
+      one := 1;
+      hh := h/2;
+      xh := x + hh;
+      if ord = Order.second then
+         y0 := RK2(f, h, x, y);
+         yh := RK2(f, hh, x, y);
+         y1 := RK2(f, hh, xh, yh);
+         ec := (4.0/3.0);
+         p  := 2
+      elsif ord = Order.third then
+         y0 := RK3(f, h, x, y);
+         yh := RK3(f, hh, x, y);
+         y1 := RK3(f, hh, xh, yh);
+         ec := (8.0/7.0);
+         p  := 3
+      else (* ord = Order.fourth *)
+         y0 := RK4(f, h, x, y);
+         yh := RK4(f, hh, x, y);
+         y1 := RK4(f, hh, xh, yh);
+         ec := (16.0/15.0);
+         p  := 4
+      end;
+      en := ec*A.TwoNorm(y1 - y0);
+      yn := Fn.Max(one, A.TwoNorm(y1));  (* choose absolute or relative error *)
+      if en <= tol*yn then
+         x := x + h;
+         y := y1;
+         if (en > 0) & (err > 0) then
+            (* PI controller *)
+            r := ((tol*yn/en)**(alpha/(p+1)))*((tol/err)**(beta/(p+1)))
+         elsif en > 0 then
+            (* I controller *)
+            r := (tol*yn/en)**(1/(p+1))
+         else
+            (* no error - double the step size *)
+            r := 2/sf
+         end;
+         h := Fn.Min(Fn.Max(h/2, sf*r*h), 2*h);  (* anti-winddown and -windup *)
+         err := en/yn
+      else
+         x0 := x;
+         y0 := y;
+         h0 := h/2;
+         e0 := err;
+         Solve(f, tol, ord, x0, y0, h0, e0);
+         x1 := x + h/2;
+         y1 := y0;
+         h1 := h/2;
+         e1 := e0;
+         Solve(f, tol, ord, x1, y1, h1, e1);
+         x := x + h;
+         y := y1;
+         h := Fn.Min(Fn.Max(Fn.Min(h0, h1), h/4), h);
+         err := Fn.Max(e0, e1)
+      end
+   end Solve;
+
+begin
+   count := 0
+end RungeKutta.

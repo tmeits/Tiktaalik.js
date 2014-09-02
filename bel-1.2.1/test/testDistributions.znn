@@ -1,0 +1,99 @@
+module {public} Main;
+
+   (* Tests the module Distributions *)
+
+   import
+      Bel.IO.Log as L,
+      Bel.MF.Numbers as N,
+      Bel.MATH.Distributions as D;
+
+   procedure {public} Run;
+   var
+      n : N.Number;
+   begin
+      writeln("Various chi-squared percentage points:");
+      writeln("   In 5  degrees of freedom:");
+      n := D.ChiSquared(D.Certainty.ninety, 5);
+      writeln("      @ 90%   confidence: " + n.Typeset());
+      n := D.ChiSquared(D.Certainty.ninetyFive, 5);
+      writeln("      @ 95%   confidence: " + n.Typeset());
+      n := D.ChiSquared(D.Certainty.ninetySevenPointFive, 5);
+      writeln("      @ 97.5% confidence: " + n.Typeset());
+      n := D.ChiSquared(D.Certainty.ninetyNine, 5);
+      writeln("      @ 99%   confidence: " + n.Typeset());
+      n := D.ChiSquared(D.Certainty.ninetyNinePointFive, 5);
+      writeln("      @ 99.5% confidence: " + n.Typeset());
+      writeln("   In 25 degrees of freedom:");
+      n := D.ChiSquared(D.Certainty.ninety, 25);
+      writeln("      @ 90%   confidence: " + n.Typeset());
+      n := D.ChiSquared(D.Certainty.ninetyFive, 25);
+      writeln("      @ 95%   confidence: " + n.Typeset());
+      n := D.ChiSquared(D.Certainty.ninetySevenPointFive, 25);
+      writeln("      @ 97.5% confidence: " + n.Typeset());
+      n := D.ChiSquared(D.Certainty.ninetyNine, 25);
+      writeln("      @ 99%   confidence: " + n.Typeset());
+      n := D.ChiSquared(D.Certainty.ninetyNinePointFive, 25);
+      writeln("      @ 99.5% confidence: " + n.Typeset());
+      writeln("Various student-T percentage points:");
+      writeln("   In 5  degrees of freedom:");
+      n := D.StudentT(D.Certainty.ninety, 5);
+      writeln("      @ 90%   confidence: " + n.Typeset());
+      n := D.StudentT(D.Certainty.ninetyFive, 5);
+      writeln("      @ 95%   confidence: " + n.Typeset());
+      n := D.StudentT(D.Certainty.ninetySevenPointFive, 5);
+      writeln("      @ 97.5% confidence: " + n.Typeset());
+      n := D.StudentT(D.Certainty.ninetyNine, 5);
+      writeln("      @ 99%   confidence: " + n.Typeset());
+      n := D.StudentT(D.Certainty.ninetyNinePointFive, 5);
+      writeln("      @ 99.5% confidence: " + n.Typeset());
+      writeln("   In 25 degrees of freedom:");
+      n := D.StudentT(D.Certainty.ninety, 25);
+      writeln("      @ 90%   confidence: " + n.Typeset());
+      n := D.StudentT(D.Certainty.ninetyFive, 25);
+      writeln("      @ 95%   confidence: " + n.Typeset());
+      n := D.StudentT(D.Certainty.ninetySevenPointFive, 25);
+      writeln("      @ 97.5% confidence: " + n.Typeset());
+      n := D.StudentT(D.Certainty.ninetyNine, 25);
+      writeln("      @ 99%   confidence: " + n.Typeset());
+      n := D.StudentT(D.Certainty.ninetyNinePointFive, 25);
+      writeln("      @ 99.5% confidence: " + n.Typeset());
+      writeln("Various F-distribution percentage points:");
+      writeln("   In 5, 4 degrees of freedom:");
+      n := D.F(D.Certainty.ninety, 5, 4);
+      writeln("      @ 90%   confidence: " + n.Typeset());
+      n := D.F(D.Certainty.ninetyFive, 5, 4);
+      writeln("      @ 95%   confidence: " + n.Typeset());
+      n := D.F(D.Certainty.ninetySevenPointFive, 5, 4);
+      writeln("      @ 97.5% confidence: " + n.Typeset());
+      n := D.F(D.Certainty.ninetyNine, 5, 4);
+      writeln("      @ 99%   confidence: " + n.Typeset());
+      n := D.F(D.Certainty.ninetyNinePointFive, 5, 4);
+      writeln("      @ 99.5% confidence: " + n.Typeset());
+      writeln("   In 20, 25 degrees of freedom:");
+      n := D.F(D.Certainty.ninety, 20, 25);
+      writeln("      @ 90%   confidence: " + n.Typeset());
+      n := D.F(D.Certainty.ninetyFive, 20, 25);
+      writeln("      @ 95%   confidence: " + n.Typeset());
+      n := D.F(D.Certainty.ninetySevenPointFive, 20, 25);
+      writeln("      @ 97.5% confidence: " + n.Typeset());
+      n := D.F(D.Certainty.ninetyNine, 20, 25);
+      writeln("      @ 99%   confidence: " + n.Typeset());
+      n := D.F(D.Certainty.ninetyNinePointFive, 20, 25);
+      writeln("      @ 99.5% confidence: " + n.Typeset());
+      writeln("   In 25, 25 degrees of freedom:");
+      n := D.F(D.Certainty.ninety, 25, 25);
+      writeln("      @ 90%   confidence: " + n.Typeset());
+      n := D.F(D.Certainty.ninetyFive, 25, 25);
+      writeln("      @ 95%   confidence: " + n.Typeset());
+      n := D.F(D.Certainty.ninetySevenPointFive, 25, 25);
+      writeln("      @ 97.5% confidence: " + n.Typeset());
+      n := D.F(D.Certainty.ninetyNine, 25, 25);
+      writeln("      @ 99%   confidence: " + n.Typeset());
+      n := D.F(D.Certainty.ninetyNinePointFive, 25, 25);
+      writeln("      @ 99.5% confidence: " + n.Typeset())
+   end Run;
+
+begin
+   Run;
+   L.Close
+end Main.

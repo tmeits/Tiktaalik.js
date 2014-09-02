@@ -1,0 +1,271 @@
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(*       BBBB      EEEEE     L         The                                    *)
+(*       B   B     E         L           BIOLOGICAL                           *)
+(*       BBBB      EEE       L           ENGINEERING                          *)
+(*       B    B    E         L           LABORATORY                           *)
+(*       BBBBB     EEEEEE    LLLLLL        @ Saginaw Valley State University  *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Copyright 2008-2010, Alan D. Freed                                         *)
+(*                                                                            *)
+(* This file is part of the BEL suite of .NET/mono libraries.                 *)
+(*                                                                            *)
+(* BEL is a free software: you can redistribute it and/or modify it under the *)
+(* terms of the GNU Lesser General Public License as published by the Free    *)
+(* Software Foundation, either version 3 of the License, or (at your option)  *)
+(* any later version.                                                         *)
+(*                                                                            *)
+(* BEL is distributed in the hope that it will be useful, but WITHOUT ANY     *)
+(* WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS  *)
+(* FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License for   *)
+(* more details.                                                              *)
+(*                                                                            *)
+(* You should have received a copy of the GNU Lesser General Public License   *)
+(* along with BEL.  If not, see <http://www.gnu.org/licenses/>.               *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Establishes the kinematic fields and their rates for isochoric membranes.  *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* The assumed deformation field is spatially homogeneous and described by    *)
+(*    x[1](t) = lambda1(t) X[1] + gamma1(t)  X[2]                             *)
+(*    x[2](t) = gamma2(t)  X[1] + lambda2(t) X[2]                             *)
+(*    x[3](t) =                                    lambda3(t) X[3]            *)
+(* with                                                                       *)
+(*    lambda3 = 1/(lambda1*lambda2 - gamma1*gamma2)                           *)
+(* because the kinematic response is considered to be isochoric. Therefore,   *)
+(* deformation reduces from 3-space to 2-space with a deformation gradient of *)
+(*          | lambda1   gamma1 |                                              *)
+(*   F(t) = |  gamma2  lambda2 |                                              *)
+(* whose four kinematic variables (lambda1, lambda2, gamma1, and gamma2) are  *)
+(* functions of time, and through which all kinematic variables are defined   *)
+(* for in-plane biaxial, or membrane, deformations.                           *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Kinematic fields in 2-Space : each has F as its argument                   *)
+(*         FInverse  - F^{-1}                                                 *)
+(*         B         - the left-deformation tensor B = F.F^T                  *)
+(*         BInverse  - B^{-1} = F^{-T}.F^{-1}                                 *)
+(*         C         - the right-deformation tensor C = F^T.F                 *)
+(*         CInverse  - C^{-1} = F^{-1}.F^{-T}                                 *)
+(*         R         - rotation from polar decomposition F = R.U = V.R        *)
+(*         U         - stretch from polar decomposition U = R^T.F             *)
+(*         UInverse  - U^{-1}                                                 *)
+(*         V         - stretch from polar decomposition V = F.R^T             *)
+(*         VInverse  - V^{-1}                                                 *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Incremental kinematic fields in 2-space                                    *)
+(*         HatF      - F_{n+1}.F^{-1}_n                                       *)
+(*         HatR      - rotation from polar decomposition HatF = HatR.HatU     *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Kinematic rate fields in 2-space                                           *)
+(*         L         - dF.F^{-1}       , the velocity gradient                *)
+(*         D         - sym(L)          , rate-of-deformation tensor           *)
+(*         W         - skew(L)         , spin tensor                          *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Strain and strain rate in 2-space                                          *)
+(*         DE        - material derivative of strain                          *)
+(*         E         - integrates  DE  assuming spatial homogeneity           *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+(* Reference:  Freed, A.D., "Hypoelastic Soft-Tissues, Part I: Theory",       *)
+(*             Acta Mechanica, 2010.                                          *)
+(* ------|---------|---------|---------|---------|---------|---------|------- *)
+
+module {public} Bel.BI.Kinematics;
+
+   import
+      Bel.IO.Log          as Log,
+      Bel.MATH.Functions  as M,
+      Bel.MF.Numbers      as N,
+      Bel.MF.Matrices     as Mtx,
+      Bel.PF.Units        as SI,
+      Bel.PF.Scalars      as S,
+      Bel.PF.Tensors2     as T,
+      Bel.PF.Functions    as Fn,
+      Bel.Object as Object;
+
+   (* deformation fields *)
+
+   procedure {public} FInverse (f : T.Tensor) : T.Tensor;
+   var
+      fInv : T.Tensor;
+   begin
+      fInv := f.Inverse();
+      return fInv
+   end FInverse;
+
+   procedure {public} B (f : T.Tensor) : T.Tensor;
+   var
+      b : T.Tensor;
+   begin
+      b := f.DotTranspose(f);
+      return b
+   end B;
+
+   procedure {public} BInverse (f : T.Tensor) : T.Tensor;
+   var
+      bInv, fInv : T.Tensor;
+   begin
+      fInv := FInverse(f);
+      bInv := fInv.TransposeDot(fInv);
+      return bInv
+   end BInverse;
+
+   procedure {public} C (f : T.Tensor) : T.Tensor;
+   var
+      c : T.Tensor;
+   begin
+      c := f.TransposeDot(f);
+      return c
+   end C;
+
+   procedure {public} CInverse (f : T.Tensor) : T.Tensor;
+   var
+      cInv, fInv : T.Tensor;
+   begin
+      fInv := FInverse(f);
+      cInv := fInv.DotTranspose(fInv);
+      return cInv
+   end CInverse;
+
+   (* polar fields *)
+
+   procedure {public} R (f : T.Tensor) : T.Tensor;
+   var
+      cos, ext, mag, rot, sin : S.Scalar;
+      r : T.Tensor;
+   begin
+      r.SetUnits(SI.Strain);
+      ext := f[1,1] + f[2,2];
+      rot := f[2,1] - f[1,2];
+      mag := Fn.Pythag(ext, rot);
+      sin := rot/mag;
+      cos := ext/mag;
+      r[1,1] := cos;
+      r[1,2] := -sin;
+      r[2,1] := sin;
+      r[2,2] := cos;
+      return r
+   end R;
+
+   procedure {public} U (f : T.Tensor) : T.Tensor;
+   var
+      r, u : T.Tensor;
+   begin
+      r := R(f);
+      u := r.TransposeDot(f);
+      return u
+   end U;
+
+   procedure {public} UInverse (f : T.Tensor) : T.Tensor;
+   var
+      fInv, r, uInv : T.Tensor;
+   begin
+      r := R(f);
+      fInv := f.Inverse();
+      uInv := fInv.Dot(r);
+      return uInv
+   end UInverse;
+
+   procedure {public} V (f : T.Tensor) : T.Tensor;
+   var
+      r, v : T.Tensor;
+   begin
+      r := R(f);
+      v := f.DotTranspose(r);
+      return v
+   end V;
+
+   procedure {public} VInverse (f : T.Tensor) : T.Tensor;
+   var
+      fInv, r, vInv : T.Tensor;
+   begin
+      r := R(f);
+      fInv := f.Inverse();
+      vInv := r.Dot(fInv);
+      return vInv
+   end VInverse;
+
+   (* incremental deformation fields *)
+
+   procedure {public} HatF (currF, nextF : T.Tensor) : T.Tensor;
+   var
+      fInv, hatF : T.Tensor;
+   begin
+      fInv := currF.Inverse();
+      hatF := nextF.Dot(fInv);
+      return hatF
+   end HatF;
+
+   procedure {public} HatR (currF, nextF : T.Tensor) : T.Tensor;
+   var
+      cos, h, sin, x, y : S.Scalar;
+      hatR : T.Tensor;
+   begin
+      hatR.SetUnits(SI.Strain);
+      y := nextF[1,1]*currF[1,2] + currF[2,2]*nextF[2,1]
+         - currF[1,1]*nextF[1,2] - nextF[2,2]*currF[2,1];
+      x := nextF[1,1]*currF[2,2] + currF[1,1]*nextF[2,2]
+         - currF[1,2]*nextF[2,1] - nextF[1,2]*currF[2,1];
+      h := Fn.Pythag(x, y);
+      cos := x/h;
+      sin := y/h;
+      hatR[1,1] := cos;
+      hatR[1,2] := -sin;
+      hatR[2,1] := sin;
+      hatR[2,2] := cos;
+      return hatR
+   end HatR;
+
+   (* rate deformation fields *)
+
+   procedure {public} L (f, dF : T.Tensor) : T.Tensor;
+   var
+      fInv, l : T.Tensor;
+   begin
+      fInv := f.Inverse();
+      l := dF.Dot(fInv);
+      return l
+   end L;
+
+   procedure {public} D (l : T.Tensor) : T.Tensor;
+   var
+      d : T.Tensor;
+   begin
+      d := T.SymmetricPart(l);
+      return d
+   end D;
+
+   procedure {public} W (l : T.Tensor) : T.Tensor;
+   var
+      w : T.Tensor;
+   begin
+      w := T.SkewPart(l);
+      return w
+   end W;
+
+   (* strain and the material derivative of strain *)
+
+   procedure {public} DE (e, l : T.Tensor) : T.Tensor;
+   var
+      de : T.Tensor;
+   begin
+      de := D(l) + l.Dot(e) + e.DotTranspose(l);
+      return de
+   end DE;
+
+   procedure {public} E (dTime : S.Scalar;
+                         currE, hatF, currL, nextL : T.Tensor) : T.Tensor;
+   var
+      dCurr, dNext, nextE, predE, pushE : T.Tensor;
+   begin
+      (* predictor stage of the integration in configuration at step N *)
+      dCurr := D(currL) + currL.Dot(currE) + currE.DotTranspose(currL);
+      predE := currE + dTime*dCurr;
+      (* corrector stage of the integration in configuration at step N+1 *)
+      dCurr := D(currL) + currL.Dot(predE) + predE.DotTranspose(currL);
+      pushE := hatF.Dot(predE.DotTranspose(hatF));
+      dNext := D(nextL) + nextL.Dot(pushE) + pushE.DotTranspose(nextL);
+      (* final trapezoidal integration in configuration at step N+1 *)
+      nextE := hatF.Dot(currE.DotTranspose(hatF)) + (dTime/2)*(dCurr + dNext);
+      return nextE
+   end E;
+
+begin
+end Kinematics.
