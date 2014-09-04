@@ -2,7 +2,7 @@
  * Sorting: QuickSort 
  * This example is a part of Prof. Nikalus Wirth's book
  * www.zonnon.ethz.ch/usergroup
- * (c) ETH Zurich 
+ * (c) ETH Zurich
  *)
 
 module quickSort;
