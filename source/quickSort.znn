@@ -29,35 +29,5 @@ module quickSort;
        if i < R then QuickSort(a, i, R) end;
     end QuickSort;
 
-    (***** Example support *****)
-
-    procedure FillTheArray;
-    var i:integer;
-    begin
-      for i := 0 to MAX_SIZE - 1 do 
-        MyArray[i] := abs( 10 - i ); 
-      end; 
-    end FillTheArray;
- 
-    procedure PrintTheArray;
-    var i:integer;
-    begin
-       writeln("Array:");
-       for i := 0 to MAX_SIZE - 1 do
-          write( MyArray[i]:2, ', ' ); 
-       end; 
-       writeln;
-    end PrintTheArray;
-    
-    procedure Execute;
-    begin
-       QuickSort(MyArray, 0, MAX_SIZE - 1); 
-    end Execute;
 begin
- writeln("Example 2.10 (Quick sort)");
- FillTheArray;
- PrintTheArray;
- Execute;
- PrintTheArray;
-write("Press Enter to continue"); readln
 end quickSort.
