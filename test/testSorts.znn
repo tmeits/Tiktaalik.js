@@ -1,0 +1,55 @@
+(*   test quickSort   *)
+(* 
+ * Sorting: QuickSort
+ * This example is a part of Prof. Nikalus Wirth's book
+ * www.zonnon.ethz.ch/usergroup
+ * (c) ETH Zurich 
+ *)
+
+module testSorts;
+    import
+      Sorts as S;
+    
+    const MAX_SIZE = 20;
+    
+    
+    type ElementOfArray = integer;
+    type DefaultArray = array MAX_SIZE of ElementOfArray;
+    
+    var MyArray: DefaultArray;
+
+
+    (***** Example support *****)
+
+    procedure FillTheArray;
+    var i:integer;
+    begin
+      for i := 0 to S.MAX_SIZE - 1 do 
+        MyArray[i] := abs( 10 - i ); 
+      end; 
+    end FillTheArray;
+ 
+    procedure PrintTheArray;
+    var i:integer;
+    begin
+       writeln("Array:");
+       for i := 0 to S.MAX_SIZE - 1 do
+          write( MyArray[i]:2, ', ' ); 
+       end; 
+       writeln;
+    end PrintTheArray;
+    
+    procedure Execute;
+    begin
+       S.QuickSort(MyArray, 0, S.MAX_SIZE - 1); 
+    end Execute;
+begin
+ writeln("Example 2.10 (Quick sort)");
+ FillTheArray;
+ PrintTheArray;
+ Execute;
+ PrintTheArray;
+write("Press Enter to continue"); readln
+end testSorts.
+(*
+ ~/Загрузки/ch.ethz.zonnon_1.3.0/compiler/zc.exe /file:testSorts.znn /ref:sorts.dll /entry:testSorts *)
