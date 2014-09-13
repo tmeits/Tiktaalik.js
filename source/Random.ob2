@@ -2,9 +2,7 @@
 MODULE Random;
 
 VAR z: LONGINT;
-TYPE
-  BarChart* = ARRAY 20 OF LONGINT;
-(*VAR bch: BarChart;*)
+
 PROCEDURE Uniform*(): REAL;
   CONST
     a = 16807;  m = 2147483647;
