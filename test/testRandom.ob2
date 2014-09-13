@@ -12,10 +12,11 @@ BEGIN
 	Out.String ("Seed? "); In.LongInt (i); Out.Ln;
 	IF ~ In.Done THEN 
 		Random.InitSeed(12345);
-		Out.String("Wrong number - one iteration"); Out.Ln;    
+		Out.String("Wrong number - set default InitSeed(12345)"); Out.Ln;
+	ELSE
+		 Random.InitSeed(i);  
 	END;
-	Random.InitSeed(i);
-	FOR i:=1 TO 100 DO
+	FOR i:=1 TO 10 DO
 		rnd:=Random.Uniform();
 		Out.Real(rnd, FieldWidth); Out.Ln;
 	END;
