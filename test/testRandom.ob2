@@ -28,4 +28,7 @@ http://smalllinux.sourceforge.net/oberon/oakwood.htm
 http://www.excelsior-usa.com/doc/xds/xc06.html
 http://www.uni-vologda.ac.ru/oberon/o2rus.htm
 http://www.inr.ac.ru/~info21/pdf/Modula-Oberon-June-2007-ru.pdf
+
+http://www.kronos.ru/literature/mithril
+http://www.kronos.ru/literature/nedorya
 *)
