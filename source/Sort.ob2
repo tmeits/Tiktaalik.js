@@ -1,8 +1,8 @@
-(* sorting-algorithms-bogosort.oberon-2 *)
+(* sorting-algorithms *)
 MODULE Sort;
 	IMPORT Out;
 
-PROCEDURE BubbleSort; (* ADenS2_Sorts *)
+PROCEDURE BubbleSort(a: ARRAY * OF INTEGER); (* ADenS2_Sorts *)
   VAR i, j: INTEGER; x: Item;
 BEGIN
   FOR i := 1 TO n-1 DO
