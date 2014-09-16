@@ -36,4 +36,4 @@ END Shuffle;
 BEGIN
 	Out.Ln;
 END Sort.
-(* *)
+(* http://www.inr.ac.ru/~info21/ADen/AD2012.pdf page 66*)
