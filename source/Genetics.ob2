@@ -11,5 +11,15 @@ MODULE Genetics;
 
     Adjmut:    Implements variable mutation rate
 *)
+TYPE Item* = INTEGER;
+TYPE Bits* = INTEGER;
+
+PROCEDURE Encode*(n: Item; nd: Bits; ph: ARRAY OF REAL; gn: ARRAY OF Item);
+(*  Encode phenotype parameters into integer genotype
+    ph(k) are x,y coordinates [ 0 < x,y < 1 ] *)
+BEGIN
+END Encode;	
+
+BEGIN
 END Genetics.
 (* rm *.sym | ~/xds/bin/xc =make Genetics.ob2 +MAIN *)
