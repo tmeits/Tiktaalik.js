@@ -11,5 +11,5 @@ MODULE Genetics;
 
     Adjmut:    Implements variable mutation rate
 *)
-END Genetics;
-(**)
+END Genetics.
+(* rm *.sym | ~/xds/bin/xc =make Genetics.ob2 +MAIN *)
