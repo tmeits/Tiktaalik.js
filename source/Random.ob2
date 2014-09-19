@@ -1,7 +1,8 @@
 (* From M.Raiser, N.Wirth "Programming in Oberon" *)
 MODULE Random;
-
-VAR z: LONGINT;
+  IMPORT Out;
+  TYPE  Item = INTEGER;
+  VAR z: LONGINT;
 
 PROCEDURE Uniform*(): REAL;
   CONST
@@ -23,12 +24,56 @@ END rand16;
 
 PROCEDURE InitSeed*(seed: LONGINT);
 BEGIN
-  z:=seed;
+  IF seed < 0 THEN 
+    Out.String("Wrong number - set default InitSeed(12345)"); Out.Ln;
+    z := 12345
+  ELSE z:=seed
+  END
 END InitSeed;
 
+(* "Minimal standard" pseudo-random number generator of Park and
+    Miller. Returns a uniform random deviate r s.t. 0.0 < r < 1.0. *)
+PROCEDURE ran0(VAR seed: LONGINT): REAL;
+  CONST
+    A = 48271; M = 2147483647; Q = 44488; R = 3399;
+    SCALE = 1./M; EPS = 1.2E-7; RNMX = 1.-EPS;
+  VAR
+    j: LONGINT;
+BEGIN
+  (* Executable section *)
+  j := seed DIV Q;
+  seed := A*(seed-j*Q)-R*j;
+  IF seed < 0 THEN seed := seed+M; END;
+  IF seed*SCALE < RNMX THEN RETURN seed*SCALE
+  ELSE RETURN RNMX 
+  END;
+END ran0;
+(* Return the next pseudo-random deviate from a sequence which is
+   uniformly distributed in the interval [0.,1.] *)
+PROCEDURE URand*():REAL;
+BEGIN
+  RETURN ran0(z)
+END URand;
 BEGIN
    z:=314159;
 END Random.
-(* ~/xds/bin/xc =compile Random.ob2 *)
+(* rm *.sym | ~/xds/bin/xc =compile Random.ob2 *)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
