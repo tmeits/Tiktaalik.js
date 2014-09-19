@@ -1,15 +1,11 @@
 (* GENETICS MODULE *)
 MODULE Genetics;
 (*
-	Encode:    encodes phenotype into genotype
-
-    Decode:    decodes genotype into phenotype
-
-    Cross:     Breeds two offspring from two parents
-
-    Mutate:    Introduces random mutation in a genotype
-
-    Adjmut:    Implements variable mutation rate
+  Encode:    encodes phenotype into genotype
+  Decode:    decodes genotype into phenotype
+  Cross:     Breeds two offspring from two parents
+  Mutate:    Introduces random mutation in a genotype
+  Adjmut:    Implements variable mutation rate
 *)
 TYPE Item* = INTEGER;
 TYPE Bits* = INTEGER;
