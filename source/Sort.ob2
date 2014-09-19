@@ -20,7 +20,7 @@ PROCEDURE PrintArrayReal*(n: Item; a: ARRAY OF RealItem);
   VAR i: Item;
 BEGIN
   FOR i:=0 TO n-1 DO
-    Out.Real(a[i],9); 
+    Out.Real(a[i],12); 
   END;
   Out.Ln;
 END PrintArrayReal;
@@ -39,7 +39,7 @@ PROCEDURE InitArrayReal*(n: Item; VAR a: ARRAY OF RealItem);
 BEGIN
   j := 0;
   FOR i := n-1 TO 0 BY -1 DO
-    a[j] := i; j := j+1;
+    a[j] := i + 0.456789; j := j+1;
   END;
 END InitArrayReal;
 
@@ -92,7 +92,8 @@ PROCEDURE SortPermutation*(n: Item; a: ARRAY OF RealItem; VAR p: ARRAY OF Item);
 BEGIN
 END SortPermutation;
 
-BEGIN (* Test *)
+PROCEDURE Test*;
+BEGIN
   Out.String("*** BubbleSort"); Out.Ln;
   InitArray(p, a); PrintArray(p, a);
   BubbleSort(p, a);
@@ -105,11 +106,19 @@ BEGIN (* Test *)
   InitArray(p, a); PrintArray(p, a);
   QuickSort(p, a);
   PrintArray(p, a);
+END Test;
+
+BEGIN (* Test *)
+  Test
 END Sorts.
 (*
   rm *.sym | ~/xds/bin/xc =compile Sort.ob2 +MAIN !!!
   rm *.sym | ~/xds/bin/xc =make Sort.ob2 +MAIN
   gcc -m32 -o Sorts Sorts.o  ~/xds/lib/x86/libts.a ~/xds/lib/x86/libxds.a  -lm
   sudo apt-get install gcc-multilib *** for ubuntu 12.04 64bits
+  
+  READ
+  http://www.excelsior.ru/files/pages/wirth-pim.pdf
+  http://www.uni-vologda.ac.ru/oberon/infoart/m2&oop.htm
   *)
  
