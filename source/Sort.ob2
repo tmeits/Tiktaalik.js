@@ -88,8 +88,23 @@ PROCEDURE QuickSort*(n: Item; VAR a: ARRAY OF Item);
 BEGIN  sort(0, n-1, a)
 END QuickSort;
 
-PROCEDURE SortPermutation*(n: Item; a: ARRAY OF RealItem; VAR p: ARRAY OF Item);
+PROCEDURE SortPermutation* (n: Item; (* number of individuals in a population *)
+  a: ARRAY OF RealItem; VAR p: ARRAY OF Item);
+  VAR i, j, k: Item;
+    x: RealItem;
 BEGIN
+  FOR i:=0 TO n DO
+    p[i] := i;
+  END;
+  (* BubbleSortReal *)
+  FOR i := 1 TO n-1 DO
+    FOR j := n-1 TO i BY -1 DO
+      IF a[j-1] > a[j] THEN
+        x := a[j-1]; a[j-1] := a[j]; a[j] := x;
+        k := p[j-1]; p[j-1] := p[j]; p[j] := k;
+      END;
+    END;
+  END;
 END SortPermutation;
 
 PROCEDURE Test*;
@@ -106,6 +121,11 @@ BEGIN
   InitArray(p, a); PrintArray(p, a);
   QuickSort(p, a);
   PrintArray(p, a);
+  Out.String("*** SortPermutation"); Out.Ln;
+  InitArrayReal(p, r); InitArray(p, a);
+  SortPermutation(p, r, a);
+  PrintArray(p, a);
+  PrintArrayReal(p, r);
 END Test;
 
 BEGIN (* Test *)
