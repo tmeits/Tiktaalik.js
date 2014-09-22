@@ -93,7 +93,7 @@ PROCEDURE SortPermutation* (n: Item; (* number of individuals in a population *)
   VAR i, j, k: Item;
     x: RealItem;
 BEGIN
-  FOR i:=0 TO n DO
+  FOR i:=0 TO n-1 DO
     p[i] := i;
   END;
   (* BubbleSortReal *)

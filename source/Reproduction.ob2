@@ -27,7 +27,7 @@ BEGIN
   (* Compute the key index *)
   Sorts.SortPermutation (n, arrin, indx);
   (* ...and the rank order *)
-  FOR i := 0 TO n DO
+  FOR i := 0 TO n-1 DO
     rank[indx[i]] := n-i+1;
   END;
   Out.Ln;
