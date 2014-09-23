@@ -154,6 +154,7 @@ END Test;
 BEGIN (* Test *)
   Test
 END Sorts.
+
 (*
   ~/xds/bin/xc =o
   ~/xds/bin/xc =make Sort.ob2  +CHANGESYM +VERBOSE
