@@ -2,11 +2,11 @@
 MODULE Reproduction;
 IMPORT Out, Sorts;
 (*
-  Select: Parent selection by roulette wheel algorithm
-  Rnkpop: Ranks population
+  Select*         : Parent selection by roulette wheel algorithm
+  RanksPopulation*: Ranks population
   Genrep: Inserts offspring into population, for full generational replacement
   Stdrep: Inserts offspring into population, for steady-state reproduction
-  Newpop: Replaces old generation with new generation
+  NewPopulation*  : Replaces old generation with new generation
 *)
 PROCEDURE Select (np: Sorts.Item; 
   jfit: ; 
@@ -32,6 +32,9 @@ BEGIN
   END;
   Out.Ln;
 END RanksPopulation;
+PROCEDURE NewPopulation* ();
+BEGIN
+END NewPopulation;
 BEGIN
   Out.Ln;
 END Reproduction.
