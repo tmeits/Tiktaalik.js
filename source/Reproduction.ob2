@@ -33,7 +33,7 @@ BEGIN
   Out.Ln;
 END RanksPopulation;
 PROCEDURE NewPopulation* ();
-BEGIN
+BEGIN 
 END NewPopulation;
 BEGIN
   Out.Ln;
