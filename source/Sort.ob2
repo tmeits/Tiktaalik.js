@@ -1,11 +1,12 @@
 (* sorting-algorithms *)
 (**)
 MODULE Sorts;
-  IMPORT Out;
+  IMPORT Out, Random;
   
   CONST n = 10000; p = 13;
   TYPE Item* = INTEGER; RealItem* = REAL;
   VAR a: ARRAY n OF Item; r: ARRAY n OF RealItem;
+    rp: ARRAY p OF RealItem; ap: ARRAY p OF Item;
   
 PROCEDURE PrintArray*(n: Item; a: ARRAY OF Item);
   VAR i: Item;
@@ -39,9 +40,18 @@ PROCEDURE InitArrayReal*(n: Item; VAR a: ARRAY OF RealItem);
 BEGIN
   j := 0;
   FOR i := n-1 TO 0 BY -1 DO
-    a[j] := i + 0.456789; j := j+1;
+    a[j] := i + 0.3456789; j := j+1;
   END;
 END InitArrayReal;
+
+PROCEDURE InitArrayRealRandom* (n: Item; VAR a: ARRAY OF RealItem);
+  VAR i: INTEGER;
+BEGIN
+  Random.InitSeed(45);
+  FOR i := 0 TO n-1 DO
+    a[i] := Random.URand();
+  END;
+END InitArrayRealRandom;
 
 PROCEDURE BubbleSort*(n: Item; VAR a: ARRAY OF Item); 
   VAR i, j: INTEGER; x: Item;
@@ -93,7 +103,7 @@ PROCEDURE SortPermutation* (n: Item; (* number of individuals in a population *)
   VAR i, j, k: Item;
     x: RealItem;
 BEGIN
-  FOR i:=0 TO n-1 DO
+  FOR i := 0 TO n-1 DO
     p[i] := i;
   END;
   (* BubbleSortReal *)
@@ -126,12 +136,32 @@ BEGIN
   SortPermutation(p, r, a);
   PrintArray(p, a);
   PrintArrayReal(p, r);
+
+  Out.String("*** SortPermutation 2"); Out.Ln;
+  InitArrayReal(p, rp); (*InitArray(p, ap);*)
+  rp[7] := 0.1;
+  SortPermutation(p, rp, ap);
+  PrintArray(p, ap);
+  PrintArrayReal(p, rp);
+
+  Out.String("*** SortPermutation Random"); Out.Ln;
+  InitArrayRealRandom(p, rp); 
+  SortPermutation(p, rp, ap);
+  PrintArray(p, ap);
+  PrintArrayReal(p, rp);
 END Test;
 
 BEGIN (* Test *)
   Test
 END Sorts.
 (*
+  ~/xds/bin/xc =o
+  ~/xds/bin/xc =make Sort.ob2  +CHANGESYM +VERBOSE
+  ~/xds/bin/xc =compile Sort.ob2 +MAIN
+  +CHANGESYM
+  rm *.sym
+  ~/xds/bin/xc =compile Random.ob2
+  ~/xds/bin/xc =make Sort.ob2 +MAIN
   rm *.sym | ~/xds/bin/xc =compile Sort.ob2 +MAIN !!!
   rm *.sym | ~/xds/bin/xc =make Sort.ob2 +MAIN
   gcc -m32 -o Sorts Sorts.o  ~/xds/lib/x86/libts.a ~/xds/lib/x86/libxds.a  -lm
