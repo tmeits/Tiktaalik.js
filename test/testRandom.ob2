@@ -40,10 +40,10 @@ BEGIN
   END;
   Out.String("================"); Out.Ln;
 END testRandom.
-(* ~/xds/bin/xc =compile ~/git/Tiktaalik/test/testRandom.ob2 
+(** ~/xds/bin/xc =compile ~/git/Tiktaalik/test/testRandom.ob2 
    gcc  -o testRandom Random.o testRandom.o ~/xds/lib/x86/libts.a ~/xds/lib/x86/libxds.a  -lm 
 *)
-(* 
+(** 
 http://www.waltzballs.org/other/prog.html
 http://www.cs.bath.ac.uk/~claire/Oberon.pdf 
 http://smalllinux.sourceforge.net/oberon/oakwood.htm
@@ -53,4 +53,7 @@ http://www.inr.ac.ru/~info21/pdf/Modula-Oberon-June-2007-ru.pdf
 
 http://www.kronos.ru/literature/mithril
 http://www.kronos.ru/literature/nedorya
+
+http://speckyboy.com/2013/03/04/designing-custom-github-demo-pages/
+http://sebnitu.github.com/BaseDemo/
 *)
