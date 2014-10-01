@@ -1,5 +1,6 @@
 (** TEST GENETICS MODULE *)
 MODULE testGenetics;
+   IMPORT Out, MathR, Random, Controls;
 (*
   testEncode:    encodes phenotype into genotype
   testDecode:    decodes genotype into phenotype
@@ -7,8 +8,8 @@ MODULE testGenetics;
   testMutate:    Introduces random mutation in a genotype
   testAdjmut:    Implements variable mutation rate
 *)
-TYPE Item* = INTEGER;
-TYPE Bits* = INTEGER;
+   TYPE Item* = INTEGER;
+   TYPE Bits* = INTEGER;
 
 PROCEDURE testEncode*(n: Item; nd: Bits; ph: ARRAY OF REAL; gn: ARRAY OF Item);
 (**   *)
