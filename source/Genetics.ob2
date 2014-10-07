@@ -1,17 +1,17 @@
 (** GENETICS MODULE *)
 MODULE Genetics;
-   IMPORT Out, MathR, Random, Controls;
+   IMPORT MathR, Random, Controls;
 (**
-  Encode:    encodes phenotype into genotype
-  Decode:    decodes genotype into phenotype
-  Cross:     Breeds two offspring from two parents
-  Mutate:    Introduces random mutation in a genotype
-  Adjmut:    Implements variable mutation rate
+  Encode: encodes phenotype into genotype
+  Decode: decodes genotype into phenotype
+  OnePointCrossover:
+  TwoPointCrossover: Breeds two offspring from two parents
+  Mutate: Introduces random mutation in a genotype
+  AdjustmentMutation: Implements variable mutation rate
 *)
    TYPE Item* = INTEGER;
    TYPE Bits* = INTEGER;
 
-   VAR ph: Controls.Phenotype; gn: Controls.Genotype; i: Item; val: REAL;
    
 PROCEDURE Encode*(n: Item; nd: Bits; ph: Controls.Phenotype; VAR gn: Controls.Genotype);
 (**  Encode phenotype parameters into integer genotype
@@ -29,18 +29,6 @@ BEGIN
       END;
       ii := ii+nd;
    END;
-   (**
-   z=10.**nd
-      ii=0
-      do 1 i=1,n
-         ip=int(ph(i)*z)
-         do 2 j=nd,1,-1
-            gn(ii+j)=mod(ip,10)
-            ip=ip/10
-    2   continue
-        ii=ii+nd
-    1 continue
-   *)
 END Encode;
 PROCEDURE Decode*(n: Item; nd: Bits; gn: Controls.Genotype; VAR ph: Controls.Phenotype);
 (** decode genotype into phenotype parameters
@@ -58,29 +46,50 @@ BEGIN
       ph[i] := ip*z;
       ii := ii+nd;
    END;
-(**
-z=10.**(-nd)
-      ii=0
-      do 1 i=1,n
-         ip=0
-         do 2 j=1,nd
-            ip=10*ip+gn(ii+j)
-    2    continue
-         ph(i)=ip*z
-         ii=ii+nd
-    1 continue
-*)
 END Decode;
+PROCEDURE OnePointCrossover*(n: Item; nd: Bits; pcross: REAL; gen1, gen2: Controls.Genotype; 
+   VAR newgen: Controls.Genotype);
+(** breeds two parent chromosomes into two offspring chromosomes
+   breeding occurs through crossover. 
+*)
 BEGIN
-   Random.InitSeed(12);
-   val := Random.URand(); ph[0] := val;
-   Out.Real(ph[0],6); Out.Ln;
-   Encode(1, 6, ph, gn);
-   FOR i := 0 TO 6-1 DO
-      Out.Int(gn[i],6); Out.Ln;
-   END;
-   Decode(1,6, gn, ph);
-   Out.Real(ph[0],6); Out.Ln;
+END OnePointCrossover;
+(**
+# *********************************************************************
+function one_point_crossover(n::Int, nd::Int, pcross::Float64,
+    gn1::Vector{Int}, gn2::Vector{Int})
+# =====================================================================  
+# breeds two parent chromosomes into two offspring chromosomes
+# breeding occurs through crossover. 
+# =====================================================================
+
+    gen1 = Int[]
+    gen2 = Int[]
+
+    for i = 1:length(gn1)
+        push!(gen1, gn1[i])
+        push!(gen2, gn2[i])
+    end
+#     gen1 = copy(gn1)
+#     gen2 = copy(gn2)
+    ce = false
+
+    if urand() < pcross
+        ce   = true
+        ispl = fortran_int((urand()*n*nd))+1 # choose cutting point
+#       @printf("%7i\n",ispl)
+        for i = ispl:n*nd
+            t       = gen2[i]
+            gen2[i] = gen1[i]
+            gen1[i] = t
+        end
+    end
+
+    return (ce, gen1, gen2)
+end
+
+*)
+BEGIN
 END Genetics.
 (**
  rm *.sym | ~/xds/bin/xc =compile Controls.ob2 
