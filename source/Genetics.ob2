@@ -47,7 +47,7 @@ BEGIN
       ii := ii+nd;
    END;
 END Decode;
-PROCEDURE OnePointCrossover*(n: Item; nd: Bits; pcross: REAL; gen1, gen2: Controls.Genotype; 
+PROCEDURE OnePointCrossover*(n: Item; nd: Bits; pcross: REAL; gen1, gen2: Controls.Genotype;
    VAR newgen: Controls.Genotype);
 (** breeds two parent chromosomes into two offspring chromosomes
    breeding occurs through crossover. 

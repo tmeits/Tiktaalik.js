@@ -5,16 +5,18 @@ MODULE SampleDriver;
    Item = INTEGER; RealItem = REAL;
   VAR 
    n, seed, i, status : Item;
+   FF : Tiktaalik.FitnessFunction;
 PROCEDURE SimpleGA*;
 BEGIN
   (** First, initialize the random-number generator *)
-  Random.InitSeed(12345);
+  Random.InitSeed(123);
   (** Set control variables (use defaults) *)
   Controls.Default;
   (** Now call Tiktaalik *)
-  Tiktaalik.evolve(10, TestFunctions.DeJong);
+  FF := TestFunctions.DeJong;
+  Tiktaalik.evolve(10, FF);
   Out.Ln;
-END SimpleGA;
+END SimpleGA; 
 BEGIN
   SimpleGA
 END SampleDriver.

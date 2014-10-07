@@ -1,6 +1,7 @@
 #
 cd ~/git/Tiktaalik/source
 rm *.sym
+rm *.o
 
 ~/xds/bin/xc =compile Random.ob2
 ~/xds/bin/xc =complie Controls.ob2

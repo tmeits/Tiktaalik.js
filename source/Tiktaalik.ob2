@@ -7,17 +7,15 @@ MODULE Tiktaalik;
    Item = LONGINT;
   TYPE 
    RealItem = REAL;
-  TYPE FitnessFunction =
+  TYPE FitnessFunction* =
    PROCEDURE(n: Item; a: ARRAY OF RealItem) : RealItem;
-  VAR
-   FF : FitnessFunction;
-   
+
 PROCEDURE evolve* (n: Item; ff: FitnessFunction);
    CONST N = 10;
    VAR a : ARRAY N OF RealItem; r : RealItem; i : Item;
 BEGIN
    FOR i := 0 TO N-1 DO
-      Random.InitSeed(123);
+      (* Random.InitSeed(1234);*)
       a[i]:=Random.URand();
    END;
    r := ff(N, a);
@@ -25,7 +23,7 @@ BEGIN
 END evolve;
 BEGIN
    evolve(10, TestFunctions.DeJong);
-   Out.Ln; 
+   Out.Ln;   
 END Tiktaalik.
 (**
    rm *.sym | ~/xds/bin/xc =compile Random.ob2 
