@@ -25,7 +25,7 @@ BEGIN
 END evolve;
 BEGIN
    evolve(10, TestFunctions.DeJong);
-   Out.Ln;
+   Out.Ln; 
 END Tiktaalik.
 (**
    rm *.sym | ~/xds/bin/xc =compile Random.ob2 

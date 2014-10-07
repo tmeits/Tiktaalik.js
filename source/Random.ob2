@@ -1,4 +1,4 @@
-(**  *)
+(**    *)
 MODULE Random;
    IMPORT Out;
    TYPE  Item = INTEGER;

@@ -23,4 +23,5 @@ END TestFunctions.
 (**
  rm *.sym | ~/xds/bin/xc =compile TestFunctions.ob2 
  http://lancet.mit.edu/galib-2.4/examples/ex19.C
+ ~/xds/bin/xc  =compile  TestFunctions.ob2 +MAKEDEF
 *)

@@ -5,17 +5,18 @@ MODULE SampleDriver;
    Item = INTEGER; RealItem = REAL;
   VAR 
    n, seed, i, status : Item;
-PROCEDURE SimpleGA;
+PROCEDURE SimpleGA*;
 BEGIN
   (** First, initialize the random-number generator *)
   Random.InitSeed(12345);
   (** Set control variables (use defaults) *)
   Controls.Default;
   (** Now call Tiktaalik *)
-  evolve(10, TestFunctions.DeJong);
+  Tiktaalik.evolve(10, TestFunctions.DeJong);
   Out.Ln;
-END;
+END SimpleGA;
 BEGIN
+  SimpleGA
 END SampleDriver.
 (**
    rm *.sym | ~/xds/bin/xc =compile Random.ob2 |
