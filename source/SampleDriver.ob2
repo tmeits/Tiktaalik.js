@@ -28,5 +28,7 @@ END SampleDriver.
    ~/xds/bin/xc =compile Tiktaalik.ob2 |
    ~/xds/bin/xc =compile SampleDriver.ob2
    
+   http://www.inf.ethz.ch/personal/wirth/ProjectOberon/
+   Project Oberon (New Edition 2013)
 
 *)
