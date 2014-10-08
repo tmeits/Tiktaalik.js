@@ -21,13 +21,6 @@ BEGIN
   SimpleGA
 END SampleDriver.
 (**
-   rm *.sym | ~/xds/bin/xc =compile Random.ob2 |
-   ~/xds/bin/xc =compile Sort.ob2 |
-   ~/xds/bin/xc =compile Controls.ob2 |
-   ~/xds/bin/xc =compile TestFunctions.ob2 |
-   ~/xds/bin/xc =compile Tiktaalik.ob2 |
-   ~/xds/bin/xc =compile SampleDriver.ob2
-   
    http://www.inf.ethz.ch/personal/wirth/ProjectOberon/
    Project Oberon (New Edition 2013)
 

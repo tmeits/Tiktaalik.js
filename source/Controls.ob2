@@ -39,16 +39,18 @@ BEGIN
    GACtl.irep := 2;
    GACtl.ielite := 0;
    GACtl.ivrb := 0; 
+   (**
+   WITH GACtl : GAControls DO
+      ivrb := 0;
+   END *)
 END Default;
 PROCEDURE Report*;
 BEGIN
+   Out.Ln;
 END Report;
 BEGIN
    Default
 END Controls.
 (**
- rm *.sym | ~/xds/bin/xc =make Controls.ob2 +MAIN
- 
- 
- 
+ rm *.sym | ~/xds/bin/xc =compile Controls.ob2
  *)
