@@ -21,7 +21,9 @@ MODULE Controls;
          ivrb: INTEGER; (* printed output 0/1/2=None/Minimal/Verbose (default is 0) *)
          
       END;
-   TYPE Phenotype* = ARRAY NMAX OF REAL;
+   TYPE Item = LONGINT;
+   TYPE RealItem = REAL;
+   TYPE Phenotype* = ARRAY NMAX OF RealItem;
    TYPE Genotype* = ARRAY NMAX*DMAX OF INTEGER;
    VAR GACtl* : GAControls;
    VAR ph* :Phenotype;
