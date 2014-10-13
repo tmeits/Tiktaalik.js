@@ -3,6 +3,7 @@
    algorithm method. *)
 MODULE Tiktaalik;
   IMPORT Out, Random (*, TestFunctions*), Controls;
+  
   TYPE
    Item = LONGINT;
   TYPE 
@@ -35,4 +36,5 @@ BEGIN
 END Tiktaalik.
 (**
  http://neuronus.com/em/19-theory/14-osnovnaya-terminologiya-geneticheskikh-algoritmov.html
+ https://dl.dropboxusercontent.com/u/17119844/Magister/index.html
 *)
