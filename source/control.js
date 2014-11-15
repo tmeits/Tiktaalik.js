@@ -77,4 +77,4 @@ return {
 	Default: Default
 }
 }(this);
-// (*http://repl.it/*)
+// (*http://repl.it/languages/Traceur*)
